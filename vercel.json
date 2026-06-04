@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/sessions/:id", "destination": "/api/sessions?id=:id" },
+    { "source": "/api/sessions", "destination": "/api/sessions" }
+  ]
+}
