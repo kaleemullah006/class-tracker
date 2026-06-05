@@ -2,6 +2,8 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/sessions/:id", "destination": "/api/sessions?id=:id" },
-    { "source": "/api/sessions", "destination": "/api/sessions" }
+    { "source": "/api/sessions", "destination": "/api/sessions" },
+    { "source": "/api/courses/:type/:id", "destination": "/api/courses?type=:type&id=:id" },
+    { "source": "/api/courses/:type", "destination": "/api/courses?type=:type" }
   ]
 }
