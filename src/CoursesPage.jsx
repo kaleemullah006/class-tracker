@@ -129,7 +129,7 @@ const SECTIONS = [
   { id: "hadees", label: "Ahadees",       icon: "📜", desc: "Roz ki ahadees" },
 ];
 
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
 
 export default function CoursesPage() {
   const [activeSection, setActiveSection] = useState(null);
