@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
-const API = "/api";
+const API = import.meta.env.VITE_API || "http://localhost:5000/api";
+
+// Noorani Qaida PDF — Google Drive
 const QAIDA_PDF_VIEW = "https://drive.google.com/file/d/1V4Un8F_8jt22kbLqCTjlG_m34vHzPaoI/preview";
 const QAIDA_PDF_OPEN = "https://drive.google.com/file/d/1V4Un8F_8jt22kbLqCTjlG_m34vHzPaoI/view";
 
-// ══════════════════════════════════════════════
-// NAMAZ DATA — Roman English mein poori namaz
-// ══════════════════════════════════════════════
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
 const NAMAZ_DATA = [
   {
     id: "niyyat",
@@ -128,14 +129,10 @@ const SECTIONS = [
   { id: "hadees", label: "Ahadees",       icon: "📜", desc: "Roz ki ahadees" },
 ];
 
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
 export default function CoursesPage() {
   const [activeSection, setActiveSection] = useState(null);
-  const [pdfExists, setPdfExists] = useState(false);
-  const [pdfUploading, setPdfUploading] = useState(false);
-  const [pdfMsg, setPdfMsg] = useState("");
-  const pdfInputRef = useRef();
-
-  // Content state for dua/quran/hadees
   const [items, setItems] = useState([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -144,19 +141,8 @@ export default function CoursesPage() {
   const [editingId, setEditingId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [expandedItem, setExpandedItem] = useState(null);
-
-  // Namaz
   const [expandedNamaz, setExpandedNamaz] = useState(null);
 
-  // Check PDF on mount
-  useEffect(() => {
-    fetch(`${API}/pdf/check`)
-      .then(r => r.json())
-      .then(d => setPdfExists(d.exists))
-      .catch(() => {});
-  }, []);
-
-  // Load items when section changes
   useEffect(() => {
     if (activeSection && ["dua", "quran", "hadees"].includes(activeSection)) {
       loadItems(activeSection);
@@ -170,27 +156,8 @@ export default function CoursesPage() {
       const res = await fetch(`${API}/courses/${type}`);
       const data = await res.json();
       setItems(data);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
     setLoadingItems(false);
-  };
-
-  const handlePdfUpload = async (file) => {
-    if (!file) return;
-    setPdfUploading(true);
-    setPdfMsg("");
-    const fd = new FormData();
-    fd.append("pdf", file);
-    try {
-      const res = await fetch(`${API}/pdf/upload`, { method: "POST", body: fd });
-      const data = await res.json();
-      if (data.success) { setPdfExists(true); setPdfMsg("✅ PDF upload ho gayi!"); }
-      else setPdfMsg("❌ Upload fail: " + (data.error || ""));
-    } catch (e) {
-      setPdfMsg("❌ Server error");
-    }
-    setPdfUploading(false);
   };
 
   const saveItem = async () => {
@@ -199,8 +166,7 @@ export default function CoursesPage() {
     try {
       if (editingId) {
         const res = await fetch(`${API}/courses/${activeSection}/${editingId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
         });
         const updated = await res.json();
@@ -208,8 +174,7 @@ export default function CoursesPage() {
         setEditingId(null);
       } else {
         const res = await fetch(`${API}/courses/${activeSection}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
         });
         const newItem = await res.json();
@@ -217,9 +182,7 @@ export default function CoursesPage() {
       }
       setFormData({ title: "", content: "", category: "" });
       setShowAddForm(false);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
     setSaving(false);
   };
 
@@ -246,20 +209,19 @@ export default function CoursesPage() {
       fontFamily: "'Georgia', serif",
       color: "#e8d5b0",
     }}>
-      {/* Background glow */}
       <div style={{
         position: "fixed", inset: 0, pointerEvents: "none",
-        background: "radial-gradient(ellipse at 20% 20%, rgba(212,175,55,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(96,165,250,0.05) 0%, transparent 60%)",
+        background: "radial-gradient(ellipse at 20% 20%, rgba(212,175,55,0.07) 0%, transparent 60%)",
       }} />
 
-      {/* ── NAVBAR ── */}
+      {/* Navbar */}
       <div style={{
         background: "rgba(212,175,55,0.08)", borderBottom: "1px solid rgba(212,175,55,0.25)",
-        padding: "14px 20px", backdropFilter: "blur(10px)",
+        padding: "14px 16px", backdropFilter: "blur(10px)",
         position: "sticky", top: 0, zIndex: 10,
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           {activeSection && (
             <button onClick={() => { setActiveSection(null); setShowAddForm(false); setEditingId(null); }} style={{
               background: "rgba(255,255,255,0.06)", color: "#a08040",
@@ -268,7 +230,7 @@ export default function CoursesPage() {
             }}>← Back</button>
           )}
           <div>
-            <div style={{ fontSize: "20px", fontWeight: "bold", color: "#d4af37" }}>
+            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#d4af37" }}>
               {activeSection
                 ? `${SECTIONS.find(s => s.id === activeSection)?.icon} ${SECTIONS.find(s => s.id === activeSection)?.label}`
                 : "📚 Courses"}
@@ -276,12 +238,11 @@ export default function CoursesPage() {
             <div style={{ fontSize: "11px", color: "#a08040", fontFamily: "sans-serif" }}>
               {activeSection
                 ? SECTIONS.find(s => s.id === activeSection)?.desc
-                : "SUNNY BHAI · Islamic Learning Hub"}
+                : "Islamic Learning Hub"}
             </div>
           </div>
         </div>
 
-        {/* Add button for content sections */}
         {activeSection && ["dua", "quran", "hadees"].includes(activeSection) && (
           <button onClick={() => {
             if (showAddForm) { setShowAddForm(false); setEditingId(null); setFormData({ title: "", content: "", category: "" }); }
@@ -290,44 +251,44 @@ export default function CoursesPage() {
             background: showAddForm ? "rgba(212,175,55,0.2)" : `linear-gradient(135deg, ${col.accent}, ${col.accent}cc)`,
             color: showAddForm ? "#d4af37" : "#0f1923",
             border: showAddForm ? `1px solid ${col.accent}` : "none",
-            borderRadius: "9px", padding: "9px 16px",
+            borderRadius: "9px", padding: "9px 14px",
             fontFamily: "sans-serif", fontSize: "13px", fontWeight: "bold", cursor: "pointer",
-          }}>{showAddForm ? "✕ Cancel" : `+ Add ${SECTIONS.find(s=>s.id===activeSection)?.label}`}</button>
+            whiteSpace: "nowrap",
+          }}>{showAddForm ? "✕ Cancel" : `+ Add`}</button>
         )}
       </div>
 
-      <div style={{ maxWidth: "680px", margin: "0 auto", padding: "20px 16px 80px" }}>
+      <div style={{ maxWidth: "680px", margin: "0 auto", padding: "16px 12px 80px" }}>
 
-        {/* ══ SECTION GRID (Home) ══ */}
+        {/* Home Grid */}
         {!activeSection && (
           <div>
-            <div style={{ textAlign: "center", marginBottom: "28px", paddingTop: "8px" }}>
-              <div style={{ fontSize: "40px", marginBottom: "8px" }}>🕌</div>
-              <div style={{ fontSize: "22px", color: "#d4af37", fontWeight: "bold" }}>Islamic Learning Hub</div>
-              <div style={{ fontSize: "13px", color: "#6b7280", fontFamily: "sans-serif", marginTop: "4px" }}>
+            <div style={{ textAlign: "center", marginBottom: "24px", paddingTop: "8px" }}>
+              <div style={{ fontSize: "36px", marginBottom: "8px" }}>🕌</div>
+              <div style={{ fontSize: "20px", color: "#d4af37", fontWeight: "bold" }}>Islamic Learning Hub</div>
+              <div style={{ fontSize: "12px", color: "#6b7280", fontFamily: "sans-serif", marginTop: "4px" }}>
                 Ek jagah — Qaida, Namaz, Dua, Quran, Ahadees
               </div>
             </div>
-
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {SECTIONS.map(sec => {
                 const c = SECTION_COLORS[sec.id];
                 return (
                   <button key={sec.id} onClick={() => setActiveSection(sec.id)} style={{
                     background: c.bg, border: `1px solid ${c.border}`,
-                    borderRadius: "16px", padding: "18px 20px",
+                    borderRadius: "16px", padding: "16px 18px",
                     cursor: "pointer", textAlign: "left",
                     display: "flex", alignItems: "center", justifyContent: "space-between",
-                    transition: "all 0.2s", animation: "fadeIn 0.3s ease",
+                    animation: "fadeIn 0.3s ease",
                   }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                       <div style={{
-                        fontSize: "28px", background: c.light,
+                        fontSize: "26px", background: c.light,
                         borderRadius: "12px", padding: "10px",
                         border: `1px solid ${c.border}`,
                       }}>{sec.icon}</div>
                       <div>
-                        <div style={{ fontSize: "16px", fontWeight: "bold", color: c.accent }}>{sec.label}</div>
+                        <div style={{ fontSize: "15px", fontWeight: "bold", color: c.accent }}>{sec.label}</div>
                         <div style={{ fontSize: "12px", color: "#6b7280", fontFamily: "sans-serif", marginTop: "2px" }}>{sec.desc}</div>
                       </div>
                     </div>
@@ -339,96 +300,88 @@ export default function CoursesPage() {
           </div>
         )}
 
-        {/* ══ NOORANI QAIDA ══ */}
+        {/* Noorani Qaida */}
         {activeSection === "qaida" && (
           <div style={{ animation: "fadeIn 0.3s ease" }}>
-            {/* Upload section */}
             <div style={{
               background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.3)",
-              borderRadius: "14px", padding: "18px 20px", marginBottom: "18px",
+              borderRadius: "14px", padding: "16px 18px", marginBottom: "16px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px",
             }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-                <div>
-                  <div style={{ fontSize: "14px", color: "#60a5fa", fontWeight: "bold", marginBottom: "4px" }}>
-                    📄 Noorani Qaida PDF
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#4a5568", fontFamily: "sans-serif" }}>
-                    {pdfExists ? "✅ PDF available hai" : "⚠️ PDF upload nahi hui abhi"}
-                  </div>
-                  {pdfMsg && <div style={{ fontSize: "12px", color: pdfExists ? "#4ade80" : "#f87171", marginTop: "4px", fontFamily: "sans-serif" }}>{pdfMsg}</div>}
-                </div>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <input ref={pdfInputRef} type="file" accept=".pdf" style={{ display: "none" }}
-                    onChange={e => handlePdfUpload(e.target.files[0])} />
-                  <button onClick={() => pdfInputRef.current?.click()} disabled={pdfUploading} style={{
-                    background: "rgba(96,165,250,0.15)", color: "#60a5fa",
-                    border: "1px solid rgba(96,165,250,0.4)", borderRadius: "8px",
-                    padding: "8px 14px", fontSize: "12px", fontWeight: "bold",
-                    cursor: pdfUploading ? "not-allowed" : "pointer", fontFamily: "sans-serif",
-                  }}>{pdfUploading ? "⏳ Uploading..." : "📤 PDF Upload"}</button>
-                </div>
+              <div>
+                <div style={{ fontSize: "14px", color: "#60a5fa", fontWeight: "bold", marginBottom: "4px" }}>📄 Noorani Qaida PDF</div>
+                <div style={{ fontSize: "12px", color: "#4a5568", fontFamily: "sans-serif" }}>✅ Google Drive par available hai</div>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <a href={QAIDA_PDF_OPEN} target="_blank" rel="noreferrer" style={{
+                  color: "#60a5fa", fontSize: "12px", fontFamily: "sans-serif",
+                  background: "rgba(96,165,250,0.12)", padding: "8px 14px",
+                  borderRadius: "8px", textDecoration: "none", border: "1px solid rgba(96,165,250,0.3)",
+                  fontWeight: "bold",
+                }}>📖 Open / Download</a>
               </div>
             </div>
 
-            {/* PDF Viewer */}
-            {pdfExists ? (
+            {/* Mobile: Button | Desktop: iframe */}
+            <div style={{
+              background: "rgba(10,20,35,0.8)", border: "1px solid rgba(96,165,250,0.3)",
+              borderRadius: "14px", overflow: "hidden",
+            }}>
               <div style={{
-                background: "rgba(10,20,35,0.8)", border: "1px solid rgba(96,165,250,0.3)",
-                borderRadius: "14px", overflow: "hidden",
+                padding: "12px 16px", background: "rgba(96,165,250,0.08)",
+                borderBottom: "1px solid rgba(96,165,250,0.2)",
+                display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px",
               }}>
-                <div style={{
-                  padding: "12px 16px", background: "rgba(96,165,250,0.08)",
-                  borderBottom: "1px solid rgba(96,165,250,0.2)",
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                }}>
-                  <span style={{ color: "#60a5fa", fontSize: "13px", fontFamily: "sans-serif", fontWeight: "bold" }}>
-                    📖 Noorani Qaida — English Instructions
-                  </span>
-                  <a href={`${API.replace('/api','')}/uploads/noorani-qaida.pdf`} target="_blank" rel="noreferrer"
-                    style={{
-                      color: "#60a5fa", fontSize: "11px", fontFamily: "sans-serif",
-                      background: "rgba(96,165,250,0.12)", padding: "4px 10px",
-                      borderRadius: "6px", textDecoration: "none", border: "1px solid rgba(96,165,250,0.3)",
-                    }}>⬇️ Download</a>
+                <span style={{ color: "#60a5fa", fontSize: "13px", fontFamily: "sans-serif", fontWeight: "bold" }}>
+                  📖 Noorani Qaida
+                </span>
+                <a href={QAIDA_PDF_OPEN} target="_blank" rel="noreferrer" style={{
+                  color: "#4ade80", fontSize: "12px", fontFamily: "sans-serif",
+                  background: "rgba(74,222,128,0.12)", padding: "5px 12px",
+                  borderRadius: "6px", textDecoration: "none", border: "1px solid rgba(74,222,128,0.3)",
+                }}>⬇️ Download</a>
+              </div>
+
+              {isMobile ? (
+                <div style={{ textAlign: "center", padding: "40px 20px", background: "rgba(96,165,250,0.04)" }}>
+                  <div style={{ fontSize: "48px", marginBottom: "14px" }}>📄</div>
+                  <div style={{ color: "#a08040", fontSize: "13px", marginBottom: "20px", fontFamily: "sans-serif" }}>
+                    Mobile par PDF directly open hogi
+                  </div>
+                  <a href={QAIDA_PDF_OPEN} target="_blank" rel="noreferrer" style={{
+                    display: "inline-block",
+                    background: "linear-gradient(135deg, #60a5fa, #3b82f6)",
+                    color: "#fff", textDecoration: "none",
+                    borderRadius: "14px", padding: "16px 32px",
+                    fontSize: "16px", fontWeight: "bold", fontFamily: "sans-serif",
+                    boxShadow: "0 4px 20px rgba(96,165,250,0.3)",
+                  }}>
+                    📖 Noorani Qaida Kholen
+                  </a>
                 </div>
+              ) : (
                 <iframe
-                  src={`${API.replace('/api','')}/uploads/noorani-qaida.pdf`}
+                  src={QAIDA_PDF_VIEW}
                   title="Noorani Qaida"
                   style={{ width: "100%", height: "75vh", border: "none", display: "block" }}
+                  allow="autoplay"
                 />
-              </div>
-            ) : (
-              <div style={{
-                textAlign: "center", padding: "60px 20px",
-                background: "rgba(96,165,250,0.04)", border: "1px dashed rgba(96,165,250,0.3)",
-                borderRadius: "14px",
-              }}>
-                <div style={{ fontSize: "50px", marginBottom: "14px" }}>📄</div>
-                <div style={{ color: "#60a5fa", fontSize: "15px", marginBottom: "8px" }}>PDF abhi upload nahi hui</div>
-                <div style={{ color: "#4a5568", fontSize: "12px", fontFamily: "sans-serif", marginBottom: "16px" }}>
-                  Upar "PDF Upload" button se Noorani Qaida PDF upload karein
-                </div>
-                <button onClick={() => pdfInputRef.current?.click()} style={{
-                  background: "rgba(96,165,250,0.15)", color: "#60a5fa",
-                  border: "1px solid rgba(96,165,250,0.4)", borderRadius: "10px",
-                  padding: "10px 20px", fontSize: "13px", cursor: "pointer", fontFamily: "sans-serif",
-                }}>📤 Upload Noorani Qaida PDF</button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
-        {/* ══ NAMAZ ══ */}
+        {/* Namaz */}
         {activeSection === "namaz" && (
           <div style={{ animation: "fadeIn 0.3s ease" }}>
             <div style={{
               background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.25)",
-              borderRadius: "12px", padding: "14px 18px", marginBottom: "18px",
+              borderRadius: "12px", padding: "12px 16px", marginBottom: "16px",
               display: "flex", alignItems: "center", gap: "10px",
             }}>
-              <span style={{ fontSize: "20px" }}>ℹ️</span>
+              <span style={{ fontSize: "18px" }}>ℹ️</span>
               <div style={{ fontSize: "12px", color: "#4ade80", fontFamily: "sans-serif" }}>
-                Yeh poori namaz Roman English mein hai — Niyyat se Salaam tak. Kisi bhi step pe click karein padhne ke liye.
+                Poori namaz Roman English mein — Niyyat se Salaam tak. Kisi bhi step pe tap karein.
               </div>
             </div>
 
@@ -437,7 +390,7 @@ export default function CoursesPage() {
                 <div key={section.id} style={{
                   background: expandedNamaz === section.id ? "rgba(74,222,128,0.08)" : "rgba(255,255,255,0.03)",
                   border: `1px solid ${expandedNamaz === section.id ? "rgba(74,222,128,0.4)" : "rgba(255,255,255,0.08)"}`,
-                  borderRadius: "12px", overflow: "hidden", transition: "all 0.2s",
+                  borderRadius: "12px", overflow: "hidden",
                 }}>
                   <button onClick={() => setExpandedNamaz(expandedNamaz === section.id ? null : section.id)} style={{
                     width: "100%", background: "none", border: "none", cursor: "pointer",
@@ -452,10 +405,10 @@ export default function CoursesPage() {
                   </button>
 
                   {expandedNamaz === section.id && (
-                    <div style={{ padding: "0 16px 16px", borderTop: "1px solid rgba(74,222,128,0.15)" }}>
+                    <div style={{ padding: "0 14px 14px", borderTop: "1px solid rgba(74,222,128,0.15)" }}>
                       {section.steps.map((step, i) => (
                         <div key={i} style={{
-                          marginTop: "12px",
+                          marginTop: "10px",
                           background: "rgba(74,222,128,0.05)",
                           border: "1px solid rgba(74,222,128,0.15)",
                           borderRadius: "10px", padding: "12px 14px",
@@ -465,10 +418,7 @@ export default function CoursesPage() {
                               {step.label}
                             </div>
                           )}
-                          <div style={{
-                            fontSize: "14px", color: "#e8d5b0", fontFamily: "'Georgia', serif",
-                            lineHeight: "1.8", whiteSpace: "pre-line",
-                          }}>
+                          <div style={{ fontSize: "14px", color: "#e8d5b0", lineHeight: "1.8", whiteSpace: "pre-line" }}>
                             {step.text}
                           </div>
                         </div>
@@ -481,46 +431,37 @@ export default function CoursesPage() {
           </div>
         )}
 
-        {/* ══ DUA / QURAN / HADEES ══ */}
+        {/* Dua / Quran / Hadees */}
         {activeSection && ["dua", "quran", "hadees"].includes(activeSection) && (
           <div style={{ animation: "fadeIn 0.3s ease" }}>
-
-            {/* Add / Edit Form */}
             {showAddForm && (
               <div style={{
-                background: `${col.bg}`, border: `1px solid ${col.border}`,
-                borderRadius: "14px", padding: "18px 20px", marginBottom: "18px",
+                background: col.bg, border: `1px solid ${col.border}`,
+                borderRadius: "14px", padding: "16px", marginBottom: "16px",
                 animation: "fadeIn 0.2s ease",
               }}>
-                <div style={{ fontSize: "14px", color: col.accent, fontWeight: "bold", marginBottom: "14px" }}>
-                  {editingId ? "✏️ Edit" : "➕ Naya"} {SECTIONS.find(s => s.id === activeSection)?.label} Add Karein
+                <div style={{ fontSize: "14px", color: col.accent, fontWeight: "bold", marginBottom: "12px" }}>
+                  {editingId ? "✏️ Edit" : "➕ Naya"} {SECTIONS.find(s => s.id === activeSection)?.label}
                 </div>
-
                 <div style={{ marginBottom: "10px" }}>
                   <Label color={col.accent}>Title *</Label>
-                  <TextInput
-                    value={formData.title}
-                    onChange={v => setFormData(f => ({ ...f, title: v }))}
-                    placeholder={activeSection === "dua" ? "e.g. Dua-e-Qunoot" : activeSection === "quran" ? "e.g. Surah Al-Ikhlas" : "e.g. Sahih Bukhari — Hadees #1"}
-                    accent={col.accent}
-                  />
+                  <TextInput value={formData.title} onChange={v => setFormData(f => ({ ...f, title: v }))}
+                    placeholder={activeSection === "dua" ? "e.g. Dua-e-Qunoot" : activeSection === "quran" ? "e.g. Surah Al-Ikhlas" : "e.g. Sahih Bukhari"}
+                    accent={col.accent} />
                 </div>
                 <div style={{ marginBottom: "10px" }}>
                   <Label color={col.accent}>Category (optional)</Label>
-                  <TextInput
-                    value={formData.category}
-                    onChange={v => setFormData(f => ({ ...f, category: v }))}
-                    placeholder={activeSection === "dua" ? "e.g. Morning Dua, Safar ki Dua" : activeSection === "quran" ? "e.g. 30th Para, Makki Surah" : "e.g. Iman, Ibadat"}
-                    accent={col.accent}
-                  />
+                  <TextInput value={formData.category} onChange={v => setFormData(f => ({ ...f, category: v }))}
+                    placeholder="e.g. Morning, Safar, Iman..."
+                    accent={col.accent} />
                 </div>
-                <div style={{ marginBottom: "14px" }}>
-                  <Label color={col.accent}>Content * (Arabic + Roman English paste karein)</Label>
+                <div style={{ marginBottom: "12px" }}>
+                  <Label color={col.accent}>Content *</Label>
                   <textarea
                     value={formData.content}
                     onChange={e => setFormData(f => ({ ...f, content: e.target.value }))}
                     placeholder="Yahan text paste ya type karein..."
-                    rows={8}
+                    rows={7}
                     style={{
                       width: "100%", background: "rgba(255,255,255,0.06)",
                       border: `1px solid ${col.border}`, borderRadius: "8px",
@@ -530,36 +471,31 @@ export default function CoursesPage() {
                     }}
                   />
                 </div>
-
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button onClick={saveItem} disabled={saving || !formData.title.trim() || !formData.content.trim()} style={{
                     flex: 1,
                     background: saving ? "rgba(255,255,255,0.1)" : `linear-gradient(135deg, ${col.accent}, ${col.accent}bb)`,
                     color: "#0f1923", border: "none", borderRadius: "10px",
-                    padding: "11px", fontSize: "14px", fontWeight: "bold",
+                    padding: "12px", fontSize: "14px", fontWeight: "bold",
                     cursor: saving ? "not-allowed" : "pointer", fontFamily: "sans-serif",
                   }}>{saving ? "⏳ Saving..." : editingId ? "💾 Update" : "💾 Save"}</button>
                   <button onClick={() => { setShowAddForm(false); setEditingId(null); setFormData({ title: "", content: "", category: "" }); }} style={{
                     background: "rgba(255,255,255,0.06)", color: "#a08040",
                     border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
-                    padding: "11px 16px", fontSize: "14px", cursor: "pointer", fontFamily: "sans-serif",
+                    padding: "12px 16px", fontSize: "14px", cursor: "pointer", fontFamily: "sans-serif",
                   }}>Cancel</button>
                 </div>
               </div>
             )}
 
-            {/* Items list */}
             {loadingItems ? (
               <div style={{ textAlign: "center", padding: "40px", color: "#a08040", fontFamily: "sans-serif" }}>⏳ Loading...</div>
             ) : items.length === 0 ? (
               <div style={{
                 textAlign: "center", padding: "60px 20px",
-                background: `${col.bg}`, border: `1px dashed ${col.border}`,
-                borderRadius: "14px",
+                background: col.bg, border: `1px dashed ${col.border}`, borderRadius: "14px",
               }}>
-                <div style={{ fontSize: "48px", marginBottom: "12px" }}>
-                  {SECTIONS.find(s => s.id === activeSection)?.icon}
-                </div>
+                <div style={{ fontSize: "48px", marginBottom: "12px" }}>{SECTIONS.find(s => s.id === activeSection)?.icon}</div>
                 <div style={{ color: col.accent, fontSize: "15px", marginBottom: "6px" }}>
                   Abhi koi {SECTIONS.find(s => s.id === activeSection)?.label} nahi hai
                 </div>
@@ -573,20 +509,15 @@ export default function CoursesPage() {
                   <div key={item._id} style={{
                     background: expandedItem === item._id ? col.bg : "rgba(255,255,255,0.03)",
                     border: `1px solid ${expandedItem === item._id ? col.border : "rgba(255,255,255,0.08)"}`,
-                    borderRadius: "12px", overflow: "hidden",
-                    animation: "fadeIn 0.3s ease",
+                    borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease",
                   }}>
-                    {/* Item header */}
-                    <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
+                    <div style={{ padding: "14px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
                       <button onClick={() => setExpandedItem(expandedItem === item._id ? null : item._id)} style={{
-                        flex: 1, background: "none", border: "none", cursor: "pointer",
-                        textAlign: "left", padding: 0,
+                        flex: 1, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0,
                       }}>
                         <div style={{ fontSize: "14px", fontWeight: "bold", color: col.accent }}>{item.title}</div>
                         {item.category && (
-                          <div style={{ fontSize: "11px", color: "#6b7280", fontFamily: "sans-serif", marginTop: "2px" }}>
-                            🏷️ {item.category}
-                          </div>
+                          <div style={{ fontSize: "11px", color: "#6b7280", fontFamily: "sans-serif", marginTop: "2px" }}>🏷️ {item.category}</div>
                         )}
                         {expandedItem !== item._id && (
                           <div style={{ fontSize: "11px", color: "#4a5568", marginTop: "3px", fontFamily: "sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -594,48 +525,35 @@ export default function CoursesPage() {
                           </div>
                         )}
                       </button>
-
-                      {/* Edit */}
                       <button onClick={() => startEdit(item)} style={{
                         background: "rgba(212,175,55,0.1)", color: "#d4af37",
                         border: "1px solid rgba(212,175,55,0.3)", borderRadius: "7px",
                         padding: "5px 9px", fontSize: "12px", cursor: "pointer",
                       }}>✏️</button>
-
-                      {/* Delete */}
                       {deleteId === item._id ? (
                         <div style={{ display: "flex", gap: "4px" }}>
                           <button onClick={() => deleteItem(item._id)} style={{
                             background: "rgba(239,68,68,0.8)", color: "#fff",
-                            border: "none", borderRadius: "6px", padding: "5px 8px",
-                            fontSize: "11px", cursor: "pointer",
+                            border: "none", borderRadius: "6px", padding: "5px 8px", fontSize: "11px", cursor: "pointer",
                           }}>Del</button>
                           <button onClick={() => setDeleteId(null)} style={{
                             background: "rgba(255,255,255,0.08)", color: "#aaa",
-                            border: "none", borderRadius: "6px", padding: "5px 6px",
-                            fontSize: "11px", cursor: "pointer",
+                            border: "none", borderRadius: "6px", padding: "5px 6px", fontSize: "11px", cursor: "pointer",
                           }}>No</button>
                         </div>
                       ) : (
                         <button onClick={() => setDeleteId(item._id)} style={{
-                          background: "none", color: "#4a5568", border: "none",
-                          fontSize: "15px", cursor: "pointer", padding: "4px",
+                          background: "none", color: "#4a5568", border: "none", fontSize: "15px", cursor: "pointer", padding: "4px",
                         }}>🗑</button>
                       )}
                     </div>
-
-                    {/* Expanded content */}
                     {expandedItem === item._id && (
                       <div style={{
                         borderTop: `1px solid ${col.border}`,
-                        background: `rgba(0,0,0,0.2)`, padding: "16px",
+                        background: "rgba(0,0,0,0.2)", padding: "14px 16px",
                         animation: "fadeIn 0.2s ease",
                       }}>
-                        <div style={{
-                          fontSize: "14px", color: "#e8d5b0",
-                          fontFamily: "'Georgia', serif", lineHeight: "1.9",
-                          whiteSpace: "pre-wrap",
-                        }}>
+                        <div style={{ fontSize: "14px", color: "#e8d5b0", lineHeight: "1.9", whiteSpace: "pre-wrap" }}>
                           {item.content}
                         </div>
                         <div style={{ marginTop: "10px", fontSize: "11px", color: "#4a5568", fontFamily: "sans-serif" }}>
@@ -649,15 +567,14 @@ export default function CoursesPage() {
             )}
           </div>
         )}
-
       </div>
 
       <style>{`
         @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 2px; }
+        button { touch-action: manipulation; }
       `}</style>
     </div>
   );
@@ -670,17 +587,14 @@ function Label({ children, color }) {
     </div>
   );
 }
+
 function TextInput({ value, onChange, placeholder, accent }) {
   return (
-    <input
-      type="text"
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
+    <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
       style={{
         width: "100%", background: "rgba(255,255,255,0.06)",
         border: `1px solid ${accent}44`, borderRadius: "8px",
-        padding: "10px 12px", color: "#e8d5b0", fontSize: "13px",
+        padding: "10px 12px", color: "#e8d5b0", fontSize: "16px",
         fontFamily: "sans-serif", outline: "none", marginBottom: "2px",
       }}
     />
