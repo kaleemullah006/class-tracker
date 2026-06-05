@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import CoursesPage from "./CoursesPage";
 
-const API = "/api/sessions";
+const API = import.meta.env.VITE_API + "/sessions";
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const API = "http://localhost:5000/api";
+const API = import.meta.env.VITE_API;
 
 // ══════════════════════════════════════════════
 // NAMAZ DATA — Roman English mein poori namaz
