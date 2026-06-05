@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
 const API = "/api";
+const QAIDA_PDF_VIEW = "https://drive.google.com/file/d/1V4Un8F_8jt22kbLqCTjlG_m34vHzPaoI/preview";
+const QAIDA_PDF_OPEN = "https://drive.google.com/file/d/1V4Un8F_8jt22kbLqCTjlG_m34vHzPaoI/view";
 
 // ══════════════════════════════════════════════
 // NAMAZ DATA — Roman English mein poori namaz
