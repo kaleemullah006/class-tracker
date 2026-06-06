@@ -94,11 +94,20 @@ app.delete('/api/courses/:type/:id', async (req, res) => {
 //  SCHEDULE ROUTES
 // ═══════════════════════════════════════════
 
-// GET all schedules
+// GET all schedules — return as object keyed by weekStart
 app.get('/api/schedules', async (req, res) => {
   try {
     const schedules = await Schedule.find().sort({ weekStart: -1 });
-    res.json(schedules);
+    // Return as object keyed by weekStart (frontend expects this format)
+    const result = {};
+    schedules.forEach(s => {
+      result[s.weekStart] = { 
+        days: s.days, 
+        belgiumTime: s.belgiumTime, 
+        savedAt: s.updatedAt || s.createdAt 
+      };
+    });
+    res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -124,37 +133,38 @@ app.delete('/api/schedules/:weekStart', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════
-//  COMPLETED DAYS ROUTES
+//  COMPLETED DAYS ROUTES  
 // ═══════════════════════════════════════════
 
-// GET all completed days
-app.get('/api/completed', async (req, res) => {
+// GET all completed days — FIXED: matches frontend /api/completeddays
+app.get('/api/completeddays', async (req, res) => {
   try {
     const completed = await CompletedDay.find();
-    // Return as object { key: sessionId }
     const result = {};
     completed.forEach(c => { result[c.key] = c.sessionId; });
     res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST - mark day completed
-app.post('/api/completed', async (req, res) => {
+// POST - mark day completed — FIXED: matches frontend body format
+app.post('/api/completeddays', async (req, res) => {
   try {
-    const { key, sessionId } = req.body;
+    const { weekStart, day, sessionId } = req.body;
+    const key = `${weekStart}__${day}`;
     const completed = await CompletedDay.findOneAndUpdate(
       { key },
-      { key, sessionId },
+      { key, sessionId, weekStart, day },
       { upsert: true, new: true }
     );
     res.json(completed);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE - unmark completed day
-app.delete('/api/completed/:key', async (req, res) => {
+// DELETE - unmark completed day — FIXED: matches frontend route params
+app.delete('/api/completeddays/:weekStart/:day', async (req, res) => {
   try {
-    await CompletedDay.findOneAndDelete({ key: req.params.key });
+    const key = `${req.params.weekStart}__${req.params.day}`;
+    await CompletedDay.findOneAndDelete({ key });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
