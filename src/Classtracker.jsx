@@ -97,33 +97,47 @@ export default function App() {
   // Courses page
   const [showCourses, setShowCourses] = useState(false);
 
-  useEffect(() => {
+  // ── Fetch functions (reusable) ──
+  const fetchSessions = () => {
     fetch(API)
       .then(r => r.json())
       .then(data => { setSessions(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  };
 
-  useEffect(() => { localStorage.setItem("class_rate", rate); }, [rate]);
-
-  // Load schedules from MongoDB
-  useEffect(() => {
+  const fetchSchedules = () => {
     fetch(`${BASE_API}/schedules`)
       .then(r => r.json())
       .then(data => setScheduleData(data))
       .catch(() => {});
-  }, []);
+  };
 
-  // Load completed days from MongoDB
-  useEffect(() => {
+  const fetchCompletedDays = () => {
     fetch(`${BASE_API}/completeddays`)
       .then(r => r.json())
       .then(data => setCompletedDays(data))
       .catch(() => {});
+  };
+
+  // Initial load
+  useEffect(() => { fetchSessions(); }, []);
+  useEffect(() => { fetchSchedules(); }, []);
+  useEffect(() => { fetchCompletedDays(); }, []);
+
+  // Polling — har 15 seconds mein sync karo dono devices ke liye
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchSessions();
+      fetchSchedules();
+      fetchCompletedDays();
+    }, 15000);
+    return () => clearInterval(interval);
   }, []);
 
+  // Rate localStorage mein save karo
+  useEffect(() => { localStorage.setItem("class_rate", rate); }, [rate]);
+
   useEffect(() => {
-    if (editingScheduleWeek) {
       const wd = scheduleData[editingScheduleWeek];
       if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
       else { setScheduleDays([]); setBelgiumTime("11:00"); }
