@@ -138,6 +138,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem("class_rate", rate); }, [rate]);
 
   useEffect(() => {
+    if (editingScheduleWeek) {
       const wd = scheduleData[editingScheduleWeek];
       if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
       else { setScheduleDays([]); setBelgiumTime("11:00"); }
