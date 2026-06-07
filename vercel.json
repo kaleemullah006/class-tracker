@@ -4,6 +4,10 @@
     { "source": "/api/sessions/:id", "destination": "/api/sessions?id=:id" },
     { "source": "/api/sessions", "destination": "/api/sessions" },
     { "source": "/api/courses/:type/:id", "destination": "/api/courses?type=:type&id=:id" },
-    { "source": "/api/courses/:type", "destination": "/api/courses?type=:type" }
+    { "source": "/api/courses/:type", "destination": "/api/courses?type=:type" },
+    { "source": "/api/schedules/:weekStart", "destination": "/api/schedules?weekStart=:weekStart" },
+    { "source": "/api/schedules", "destination": "/api/schedules" },
+    { "source": "/api/completeddays/:weekStart/:day", "destination": "/api/completeddays?weekStart=:weekStart&day=:day" },
+    { "source": "/api/completeddays", "destination": "/api/completeddays" }
   ]
 }
