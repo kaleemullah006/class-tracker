@@ -572,7 +572,7 @@ export default function App() {
           </div>
         )}
 
-        /* ===== SCHEDULE PANEL ===== */}
+        {/* ===== SCHEDULE PANEL ===== */}
         {showSchedule && (
           <div style={{
             background: "rgba(10,20,35,0.97)", border: "1px solid rgba(96,165,250,0.4)",
