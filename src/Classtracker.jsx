@@ -103,16 +103,14 @@ export default function App() {
 
   // Load schedules from MongoDB
   useEffect(() => {
-    fetch(SCHEDULES_API)
-      .then(r => r.json())
-      .then(data => {
-        const obj = {};
-        data.forEach(s => { obj[s.weekStart] = { days: s.days, belgiumTime: s.belgiumTime }; });
-        setScheduleData(obj);
-        setScheduleLoading(false);
-      })
-      .catch(() => setScheduleLoading(false));
-  }, []);
+  fetch(SCHEDULES_API)
+    .then(r => r.json())
+    .then(data => {
+      // API already object return karta hai
+      setScheduleData(data);
+    })
+    .catch(() => {});
+}, []);
 
   // Load completed days from MongoDB
   useEffect(() => {
