@@ -854,7 +854,7 @@ export default function App() {
           </div>
         )}
 
-        {{showForm && (
+        {showForm && (
           <div style={{
             background: "rgba(212,175,55,0.06)", border: "1px solid rgba(212,175,55,0.3)",
             borderRadius: "16px", padding: "20px", marginBottom: "20px", animation: "fadeIn 0.2s ease",
