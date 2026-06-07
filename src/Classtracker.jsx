@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import CoursesPage from "./CoursesPage";
 
 const API = "/api/sessions";
@@ -137,17 +137,16 @@ export default function App() {
   // Rate localStorage mein save karo
   useEffect(() => { localStorage.setItem("class_rate", rate); }, [rate]);
 
+  // Sirf week change ya edit mode change hone par sync karo — scheduleData change pe NAHI
+  const lastSyncedWeek = useRef(null);
   useEffect(() => {
-    if (editingScheduleWeek) {
-      const wd = scheduleData[editingScheduleWeek];
-      if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
-      else { setScheduleDays([]); setBelgiumTime("11:00"); }
-    } else {
-      const wd = scheduleData[scheduleWeek];
-      if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
-      else { setScheduleDays([]); setBelgiumTime("11:00"); }
-    }
-  }, [scheduleWeek, scheduleData, editingScheduleWeek]);
+    const activeWeek = editingScheduleWeek || scheduleWeek;
+    if (lastSyncedWeek.current === activeWeek) return; // already synced
+    lastSyncedWeek.current = activeWeek;
+    const wd = scheduleData[activeWeek];
+    if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
+    else { setScheduleDays([]); setBelgiumTime("11:00"); }
+  }, [scheduleWeek, editingScheduleWeek]); // scheduleData intentionally removed
 
   // ── Completed Days — MongoDB ──
   const toggleDayCompleted = async (weekStart, day, scheduleInfo) => {
@@ -206,6 +205,7 @@ export default function App() {
         ...prev,
         [weekKey]: { days: scheduleDays, belgiumTime, savedAt: new Date().toISOString() }
       }));
+      lastSyncedWeek.current = null; // reset so next open syncs fresh
     } catch (e) { console.error(e); }
     setTimeout(() => {
       setScheduleSaving(false);
