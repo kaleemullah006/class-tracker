@@ -86,7 +86,13 @@ export default function App() {
   // Schedule
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleWeek, setScheduleWeek] = useState(() => getWeekRange(todayDate).start);
-  const [scheduleData, setScheduleData] = useState({});
+  const [scheduleData, setScheduleData] = useState(() => {
+    // Pehle localStorage se load karo — MongoDB fetch hone tak
+    try {
+      const stored = localStorage.getItem("class_schedules");
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
   const [scheduleDays, setScheduleDays] = useState([]);
   const [belgiumTime, setBelgiumTime] = useState("11:00");
   const [scheduleSaving, setScheduleSaving] = useState(false);
@@ -112,7 +118,11 @@ export default function App() {
   const fetchSchedules = () => {
     fetch(`${BASE_API}/schedules`)
       .then(r => r.json())
-      .then(data => setScheduleData(data))
+      .then(data => {
+        setScheduleData(data);
+        // localStorage bhi update karo taake next visit pe instant show ho
+        localStorage.setItem("class_schedules", JSON.stringify(data));
+      })
       .catch(() => {});
   };
 
@@ -201,11 +211,12 @@ export default function App() {
         body: JSON.stringify({ weekStart: weekKey, days: scheduleDays, belgiumTime }),
       });
       // Immediately update local state — navbar pe turant nazar aaye
-      setScheduleData(prev => ({
-        ...prev,
+      const newData = {
+        ...scheduleData,
         [weekKey]: { days: scheduleDays, belgiumTime, savedAt: new Date().toISOString() }
-      }));
-      lastSyncedWeek.current = null; // reset so next open syncs fresh
+      };
+      setScheduleData(newData);
+      localStorage.setItem("class_schedules", JSON.stringify(newData));
     } catch (e) { console.error(e); }
     setTimeout(() => {
       setScheduleSaving(false);
@@ -309,7 +320,7 @@ export default function App() {
     return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;
   })();
   const thisWeekKey = getWeekRange(todayLocal).start;
-  const thisWeekSchedule = scheduleData[thisWeekKey];
+  const thisWeekSchedule = scheduleData[thisWeekKey] || null;
   const weekRange = getWeekRange(editingScheduleWeek || scheduleWeek);
 
   // All saved schedule weeks sorted descending
