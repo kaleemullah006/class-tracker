@@ -58,6 +58,11 @@ function pakistanToBelgium(t) {
   return `${String(belH).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
 }
 
+// Get today's date string for schedule day matching
+function getTodayDateStr() {
+  return new Date().toISOString().slice(0,10);
+}
+
 export default function App() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,13 +89,8 @@ export default function App() {
   const [editingScheduleWeek, setEditingScheduleWeek] = useState(null);
   const [deleteScheduleWeek, setDeleteScheduleWeek] = useState(null);
 
-  // Completed days
+  // Completed days — MongoDB se aayenge
   const [completedDays, setCompletedDays] = useState({});
-
-  // Global unpaid panel
-  const [showUnpaidPanel, setShowUnpaidPanel] = useState(false);
-  // Courses page
-  const [showCourses, setShowCourses] = useState(false);
 
   // === SYNC: BroadcastChannel for cross-tab sync ===
   const [bc, setBc] = useState(null);
@@ -114,14 +114,16 @@ export default function App() {
     try { bc?.postMessage('refresh'); } catch (e) {}
   }, [bc]);
 
-  // === Fetch functions - useCallback se stale closure fix ===
+  // Global unpaid panel
+  const [showUnpaidPanel, setShowUnpaidPanel] = useState(false);
+  // Courses page
+  const [showCourses, setShowCourses] = useState(false);
+
+  // === Fetch functions — useCallback se stale closure fix ===
   const fetchSessions = useCallback(() => {
     fetch(API)
       .then(r => r.json())
-      .then(data => {
-        setSessions(data.sort((a, b) => b.date.localeCompare(a.date)));
-        setLoading(false);
-      })
+      .then(data => { setSessions(data); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
@@ -140,11 +142,11 @@ export default function App() {
   }, []);
 
   // Initial load
-  useEffect(() => { fetchSessions(); }, [fetchSessions]);
-  useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
-  useEffect(() => { fetchCompletedDays(); }, [fetchCompletedDays]);
+  useEffect(() => { fetchSessions(); }, []);
+  useEffect(() => { fetchSchedules(); }, []);
+  useEffect(() => { fetchCompletedDays(); }, []);
 
-  // Polling - har 5 seconds mein sync (was 15s)
+  // Polling — har 5 seconds mein sync karo dono devices ke liye
   useEffect(() => {
     const interval = setInterval(() => {
       fetchSessions();
@@ -169,7 +171,7 @@ export default function App() {
     }
   }, [scheduleWeek, scheduleData, editingScheduleWeek]);
 
-  // === Completed Days - SERVER SOURCE OF TRUTH ===
+  // === Completed Days — MongoDB — SERVER SOURCE OF TRUTH ===
   const toggleDayCompleted = async (weekStart, day, scheduleInfo) => {
     const key = `${weekStart}__${day}`;
     const alreadyDone = !!completedDays[key];
@@ -181,12 +183,12 @@ export default function App() {
       const classDate = weekStartDate.toISOString().slice(0, 10);
       const classStart = scheduleInfo?.belgiumTime ? belgiumToPakistan(scheduleInfo.belgiumTime) : "";
 
-      const body = { date: classDate, start: classStart, end: "", duration: null, notes: `Schedule class - ${DAYS_FULL[dayIdx]}`, paid: false };
+      const body = { date: classDate, start: classStart, end: "", duration: null, notes: `Schedule class — ${DAYS_FULL[dayIdx]}`, paid: false };
       try {
         const res = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const saved = await res.json();
 
-        // FIX: Server se fresh data lo, local state mat append karo
+        // FIX: Server se fresh data lo
         await fetchSessions();
 
         await fetch(`${BASE_API}/completeddays`, {
@@ -194,14 +196,14 @@ export default function App() {
           body: JSON.stringify({ weekStart, day, sessionId: saved._id }),
         });
         await fetchCompletedDays();
-        broadcastRefresh(); // doosre tabs ko batao
+        broadcastRefresh();
       } catch (e) { console.error("Failed to add session", e); }
     } else {
       const sessionId = completedDays[key];
       if (sessionId && typeof sessionId === "string") {
         try {
           await fetch(`${API}/${sessionId}`, { method: "DELETE" });
-          await fetchSessions(); // server se fresh data
+          await fetchSessions();
         } catch (e) { console.error("Failed to delete session", e); }
       }
       try {
@@ -214,7 +216,7 @@ export default function App() {
 
   const isDayCompleted = (weekStart, day) => !!completedDays[`${weekStart}__${day}`];
 
-  // === Schedule - SERVER SOURCE OF TRUTH ===
+  // === Schedule — MongoDB — SERVER SOURCE OF TRUTH ===
   const saveSchedule = async (weekKey) => {
     setScheduleSaving(true);
     try {
@@ -222,7 +224,7 @@ export default function App() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekStart: weekKey, days: scheduleDays, belgiumTime }),
       });
-      await fetchSchedules(); // server se fresh data
+      await fetchSchedules();
       broadcastRefresh();
     } catch (e) { console.error(e); }
     setTimeout(() => {
@@ -236,6 +238,7 @@ export default function App() {
     try {
       await fetch(`${BASE_API}/schedules/${weekKey}`, { method: "DELETE" });
       await fetchSchedules();
+      await fetchCompletedDays();
       broadcastRefresh();
     } catch (e) { console.error(e); }
     setDeleteScheduleWeek(null);
@@ -255,7 +258,6 @@ export default function App() {
     setForm({ date, start: time, end: "", notes: "" });
     setShowForm(true);
   };
-
   const addSession = async () => {
     if (!form.date) return;
     setSaving(true);
@@ -263,12 +265,11 @@ export default function App() {
     const body = { date: form.date, start: form.start, end: form.end, duration: dur, notes: form.notes.trim(), paid: false };
     try {
       await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      await fetchSessions(); // server se fresh data
+      await fetchSessions();
       broadcastRefresh();
     } catch (e) { console.error(e); }
     setShowForm(false); setSaving(false);
   };
-
   const deleteSession = async (id) => {
     try {
       await fetch(`${API}/${id}`, { method: "DELETE" });
@@ -277,7 +278,6 @@ export default function App() {
     } catch (e) { console.error(e); }
     setDeleteId(null);
   };
-
   const saveNotes = async (id) => {
     const newNote = editingNotes[id] ?? sessions.find(s => s._id === id)?.notes ?? "";
     try {
@@ -287,7 +287,6 @@ export default function App() {
     } catch (e) { console.error(e); }
     setExpandedId(null);
   };
-
   const togglePaid = async (id, currentPaid) => {
     const newPaid = !currentPaid;
     try {
@@ -296,7 +295,6 @@ export default function App() {
       broadcastRefresh();
     } catch (e) { console.error(e); }
   };
-
   const markAllPaid = async () => {
     const unpaid = filtered.filter(s => !s.paid);
     if (!unpaid.length) return;
@@ -320,6 +318,7 @@ export default function App() {
   const monthLabel = `${MONTHS_FULL[mo-1]} ${yr}`;
   const pkTime = belgiumToPakistan(belgiumTime);
 
+  // Global unpaid summary across all months
   const globalUnpaidByMonth = allMonths.map(m => {
     const monthSessions = sessions.filter(s => s.date.startsWith(m));
     const unpaid = monthSessions.filter(s => !s.paid).length;
@@ -330,12 +329,14 @@ export default function App() {
   const globalTotalUnpaid = globalUnpaidByMonth.reduce((sum, m) => sum + m.unpaid, 0);
   const globalTotalAmount = rateNum ? globalUnpaidByMonth.reduce((sum, m) => sum + m.amount, 0) : null;
 
+  // This week's saved schedule for display
   const thisWeekKey = getWeekRange(todayDate).start;
   const thisWeekSchedule = scheduleData[thisWeekKey];
   const weekRange = getWeekRange(editingScheduleWeek || scheduleWeek);
+
+  // All saved schedule weeks sorted descending
   const savedScheduleWeeks = Object.keys(scheduleData).sort().reverse();
 
-  // === RENDER (same as before) ===
   return (
     <div style={{
       minHeight: "100vh",
@@ -343,9 +344,14 @@ export default function App() {
       fontFamily: "'Georgia', serif",
       color: "#e8d5b0", position: "relative", overflowX: "hidden",
     }}>
-      {/* Same JSX as original - no visual changes */}
+
+      {/* ══ COURSES PAGE — fullscreen overlay ══ */}
       {showCourses && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100, overflowY: "auto" }}>
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 100,
+          overflowY: "auto",
+        }}>
+          {/* Back button fixed top-left */}
           <div style={{
             position: "sticky", top: 0, zIndex: 101,
             display: "flex", justifyContent: "flex-end",
@@ -364,23 +370,25 @@ export default function App() {
           <CoursesPage />
         </div>
       )}
-
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none",
         background: "radial-gradient(ellipse at 20% 20%, rgba(212,175,55,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(34,197,94,0.05) 0%, transparent 60%)",
       }} />
 
+      {/* ===== NAVBAR ===== */}
       <div style={{
         background: "rgba(212,175,55,0.08)", borderBottom: "1px solid rgba(212,175,55,0.25)",
         padding: "14px 20px", backdropFilter: "blur(10px)",
         position: "sticky", top: 0, zIndex: 10,
       }}>
+        {/* Top row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: (thisWeekSchedule && thisWeekSchedule.days?.length > 0) ? "12px" : "0" }}>
           <div>
             <div style={{ fontSize: "20px", fontWeight: "bold", color: "#d4af37" }}>📖 Class Tracker</div>
             <div style={{ fontSize: "11px", color: "#a08040", fontFamily: "sans-serif" }}>SUNNY BHAI · Per-Class Log</div>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            {/* Global Unpaid Badge */}
             {globalTotalUnpaid > 0 && (
               <button onClick={() => setShowUnpaidPanel(p => !p)} style={{
                 background: showUnpaidPanel ? "rgba(248,113,113,0.25)" : "rgba(248,113,113,0.12)",
@@ -407,6 +415,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* ===== THIS WEEK SCHEDULE BAR ===== */}
         {thisWeekSchedule && thisWeekSchedule.days && thisWeekSchedule.days.length > 0 && (
           <div style={{
             background: "rgba(96,165,250,0.08)",
@@ -421,6 +430,8 @@ export default function App() {
                 fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.8px",
                 whiteSpace: "nowrap",
               }}>📅 This Week</div>
+
+              {/* Clickable day chips — click to toggle completed */}
               <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                 {thisWeekSchedule.days
                   .sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b))
@@ -445,6 +456,8 @@ export default function App() {
                     );
                   })}
               </div>
+
+              {/* Completed / Remaining count */}
               {(() => {
                 const total = thisWeekSchedule.days.length;
                 const done = thisWeekSchedule.days.filter(d => isDayCompleted(thisWeekKey, d)).length;
@@ -464,6 +477,7 @@ export default function App() {
                   </div>
                 );
               })()}
+
               <div style={{ display: "flex", gap: "6px" }}>
                 <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.1)", padding: "2px 7px", borderRadius: "5px" }}>
                   🇧🇪 {formatTime(thisWeekSchedule.belgiumTime)}
@@ -473,6 +487,8 @@ export default function App() {
                 </span>
               </div>
             </div>
+
+            {/* Right: unpaid badge */}
             <div style={{
               display: "flex", alignItems: "center", gap: "8px",
               background: unpaidCount > 0 ? "rgba(248,113,113,0.1)" : "rgba(74,222,128,0.08)",
@@ -498,7 +514,8 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: "680px", margin: "0 auto", padding: "16px 16px 80px" }}>
-        {/* Rest of JSX same as original */}
+
+        {/* ===== GLOBAL UNPAID PANEL ===== */}
         {showUnpaidPanel && globalTotalUnpaid > 0 && (
           <div style={{
             background: "rgba(10,20,35,0.97)", border: "1px solid rgba(248,113,113,0.4)",
@@ -506,13 +523,14 @@ export default function App() {
             animation: "fadeIn 0.2s ease",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
-              <div style={{ fontSize: "15px", color: "#f87171", fontWeight: "bold" }}>💰 Pending Payments - All Months</div>
+              <div style={{ fontSize: "15px", color: "#f87171", fontWeight: "bold" }}>💰 Pending Payments — All Months</div>
               <button onClick={() => setShowUnpaidPanel(false)} style={{
                 background: "rgba(255,255,255,0.08)", color: "#a08040",
                 border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
                 padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "sans-serif",
               }}>✕</button>
             </div>
+
             {globalUnpaidByMonth.map(m => (
               <div key={m.key} style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -548,6 +566,8 @@ export default function App() {
                 </div>
               </div>
             ))}
+
+            {/* Total row */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "12px 14px", marginTop: "8px",
@@ -572,15 +592,17 @@ export default function App() {
           </div>
         )}
 
+        {/* ===== SCHEDULE PANEL ===== */}
         {showSchedule && (
           <div style={{
             background: "rgba(10,20,35,0.97)", border: "1px solid rgba(96,165,250,0.4)",
             borderRadius: "16px", padding: "20px", marginBottom: "20px",
             animation: "fadeIn 0.2s ease",
           }}>
+            {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
               <div style={{ fontSize: "15px", color: "#60a5fa", fontWeight: "bold" }}>
-                📅 Weekly Schedule - Belgium Student
+                📅 Weekly Schedule — Belgium Student
               </div>
               <button onClick={() => { setShowSchedule(false); setEditingScheduleWeek(null); }} style={{
                 background: "rgba(255,255,255,0.08)", color: "#a08040",
@@ -588,13 +610,271 @@ export default function App() {
                 padding: "6px 12px", cursor: "pointer", fontSize: "13px", fontFamily: "sans-serif",
               }}>✕ Close</button>
             </div>
-            {/* Schedule panel content */}
-            <div style={{ textAlign: "center", color: "#4a5568", padding: "20px" }}>
-              Schedule panel content (same as original)
+
+            {/* Saved schedules list */}
+            {savedScheduleWeeks.length > 0 && !editingScheduleWeek && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "sans-serif", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Saved Schedules
+                </div>
+                {savedScheduleWeeks.map(wk => {
+                  const wr = getWeekRange(wk);
+                  const wd = scheduleData[wk];
+                  const isThisWeek = wk === thisWeekKey;
+                  return (
+                    <div key={wk} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "10px 14px", marginBottom: "6px",
+                      background: isThisWeek ? "rgba(96,165,250,0.08)" : "rgba(255,255,255,0.03)",
+                      border: isThisWeek ? "1px solid rgba(96,165,250,0.3)" : "1px solid rgba(255,255,255,0.07)",
+                      borderRadius: "10px", flexWrap: "wrap", gap: "8px",
+                    }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "13px", color: "#e8d5b0", fontFamily: "sans-serif", fontWeight: "bold" }}>
+                            {formatDateShort(wr.start)} — {formatDateShort(wr.end)}
+                          </span>
+                          {isThisWeek && (
+                            <span style={{ fontSize: "10px", color: "#60a5fa", background: "rgba(96,165,250,0.15)", padding: "1px 7px", borderRadius: "4px", fontFamily: "sans-serif" }}>
+                              This Week
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: "4px", marginTop: "5px", flexWrap: "wrap" }}>
+                          {(wd.days || []).sort((a,b) => DAYS.indexOf(a)-DAYS.indexOf(b)).map(d => (
+                            <span key={d} style={{
+                              fontSize: "11px", color: "#93c5fd", fontFamily: "sans-serif",
+                              background: "rgba(96,165,250,0.1)", padding: "1px 6px", borderRadius: "4px",
+                            }}>{d}</span>
+                          ))}
+                          <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.08)", padding: "1px 6px", borderRadius: "4px" }}>
+                            🇧🇪 {formatTime(wd.belgiumTime)}
+                          </span>
+                          <span style={{ fontSize: "11px", color: "#4ade80", fontFamily: "monospace", background: "rgba(74,222,128,0.08)", padding: "1px 6px", borderRadius: "4px" }}>
+                            🇵🇰 {formatTime(belgiumToPakistan(wd.belgiumTime))}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        {/* Edit button */}
+                        <button onClick={() => {
+                          setEditingScheduleWeek(wk);
+                          setScheduleWeek(wk);
+                          const wd2 = scheduleData[wk];
+                          setScheduleDays(wd2?.days || []);
+                          setBelgiumTime(wd2?.belgiumTime || "11:00");
+                        }} style={{
+                          background: "rgba(212,175,55,0.1)", color: "#d4af37",
+                          border: "1px solid rgba(212,175,55,0.3)", borderRadius: "7px",
+                          padding: "5px 10px", fontSize: "12px", cursor: "pointer", fontFamily: "sans-serif",
+                        }}>✏️ Edit</button>
+                        {/* Delete button */}
+                        {deleteScheduleWeek === wk ? (
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            <button onClick={() => deleteSchedule(wk)} style={{
+                              background: "rgba(239,68,68,0.8)", color: "#fff",
+                              border: "none", borderRadius: "7px", padding: "5px 9px", fontSize: "12px", cursor: "pointer",
+                            }}>Delete</button>
+                            <button onClick={() => setDeleteScheduleWeek(null)} style={{
+                              background: "rgba(255,255,255,0.08)", color: "#aaa",
+                              border: "none", borderRadius: "7px", padding: "5px 9px", fontSize: "12px", cursor: "pointer",
+                            }}>No</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setDeleteScheduleWeek(wk)} style={{
+                            background: "rgba(239,68,68,0.08)", color: "#f87171",
+                            border: "1px solid rgba(239,68,68,0.3)", borderRadius: "7px",
+                            padding: "5px 10px", fontSize: "12px", cursor: "pointer", fontFamily: "sans-serif",
+                          }}>🗑 Delete</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", marginTop: "12px", paddingTop: "12px" }}>
+                  <div style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "sans-serif", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    ➕ Add New Schedule
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Edit mode header */}
+            {editingScheduleWeek && (
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "10px 14px", marginBottom: "14px",
+                background: "rgba(212,175,55,0.08)", border: "1px solid rgba(212,175,55,0.3)",
+                borderRadius: "10px",
+              }}>
+                <div style={{ fontSize: "13px", color: "#d4af37", fontFamily: "sans-serif", fontWeight: "bold" }}>
+                  ✏️ Editing: {formatDateShort(getWeekRange(editingScheduleWeek).start)} — {formatDateShort(getWeekRange(editingScheduleWeek).end)}
+                </div>
+                <button onClick={() => setEditingScheduleWeek(null)} style={{
+                  background: "rgba(255,255,255,0.06)", color: "#a08040",
+                  border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px",
+                  padding: "4px 8px", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif",
+                }}>✕ Cancel Edit</button>
+              </div>
+            )}
+
+            {/* Week Navigator (only when adding new) */}
+            {!editingScheduleWeek && (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+                <button onClick={() => changeWeek(-1)} style={{
+                  background: "rgba(255,255,255,0.06)", color: "#a08040",
+                  border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                  padding: "8px 12px", cursor: "pointer", fontSize: "14px",
+                }}>◀</button>
+                <div style={{
+                  flex: 1, textAlign: "center", background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(96,165,250,0.25)", borderRadius: "10px", padding: "10px",
+                }}>
+                  <div style={{ fontSize: "14px", color: "#e8d5b0", fontWeight: "bold", fontFamily: "sans-serif" }}>
+                    {formatDateShort(weekRange.start)} — {formatDateShort(weekRange.end)}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#4a5568", fontFamily: "sans-serif", marginTop: "2px" }}>
+                    {new Date(scheduleWeek + "T12:00:00").getFullYear()}
+                  </div>
+                </div>
+                <button onClick={() => changeWeek(1)} style={{
+                  background: "rgba(255,255,255,0.06)", color: "#a08040",
+                  border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
+                  padding: "8px 12px", cursor: "pointer", fontSize: "14px",
+                }}>▶</button>
+                <button onClick={() => setScheduleWeek(getWeekRange(todayDate).start)} style={{
+                  background: "rgba(212,175,55,0.1)", color: "#d4af37",
+                  border: "1px solid rgba(212,175,55,0.3)", borderRadius: "8px",
+                  padding: "8px 10px", cursor: "pointer", fontSize: "11px", fontFamily: "sans-serif",
+                }}>This Week</button>
+              </div>
+            )}
+
+            {/* Day Selector */}
+            <div style={{ marginBottom: "16px" }}>
+              <Label>Select Class Days</Label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "6px" }}>
+                {DAYS.map((day, i) => {
+                  const selected = scheduleDays.includes(day);
+                  const activeWeekStart = editingScheduleWeek || scheduleWeek;
+                  const wr2 = getWeekRange(activeWeekStart);
+                  const d = new Date(wr2.start + "T12:00:00");
+                  d.setDate(d.getDate() + i);
+                  const dateNum = d.getDate();
+                  return (
+                    <button key={day} onClick={() => toggleScheduleDay(day)} style={{
+                      background: selected ? "rgba(96,165,250,0.2)" : "rgba(255,255,255,0.04)",
+                      color: selected ? "#60a5fa" : "#6b7280",
+                      border: selected ? "1px solid rgba(96,165,250,0.6)" : "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: "10px", padding: "10px 4px",
+                      cursor: "pointer", fontFamily: "sans-serif",
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: "4px",
+                      transition: "all 0.15s",
+                    }}>
+                      <span style={{ fontSize: "11px", fontWeight: "bold" }}>{day}</span>
+                      <span style={{ fontSize: "12px", color: selected ? "#93c5fd" : "#4a5568" }}>{dateNum}</span>
+                      {selected && <span style={{ fontSize: "12px" }}>✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Time Setting */}
+            <div style={{ marginBottom: "16px" }}>
+              <Label>Class Time</Label>
+              <div style={{
+                display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px",
+                background: "rgba(255,255,255,0.03)", borderRadius: "12px", padding: "14px",
+                border: "1px solid rgba(96,165,250,0.15)",
+              }}>
+                <div>
+                  <div style={{ fontSize: "11px", color: "#60a5fa", marginBottom: "6px", fontFamily: "sans-serif" }}>🇧🇪 Belgium Time</div>
+                  <input type="time" value={belgiumTime} onChange={e => setBelgiumTime(e.target.value)} style={{
+                    width: "100%", background: "rgba(96,165,250,0.08)",
+                    border: "1px solid rgba(96,165,250,0.3)", borderRadius: "8px",
+                    padding: "8px 10px", color: "#60a5fa", fontSize: "14px",
+                    fontFamily: "monospace", outline: "none",
+                  }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: "11px", color: "#4ade80", marginBottom: "6px", fontFamily: "sans-serif" }}>🇵🇰 Pakistan Time</div>
+                  <input type="time" value={pkTime} onChange={e => setBelgiumTime(pakistanToBelgium(e.target.value))} style={{
+                    width: "100%", background: "rgba(74,222,128,0.08)",
+                    border: "1px solid rgba(74,222,128,0.3)", borderRadius: "8px",
+                    padding: "8px 10px", color: "#4ade80", fontSize: "14px",
+                    fontFamily: "monospace", outline: "none",
+                  }} />
+                </div>
+              </div>
+              <div style={{ fontSize: "11px", color: "#4a5568", fontFamily: "sans-serif", marginTop: "5px", textAlign: "center" }}>
+                Belgium → Pakistan: +3 hours (CEST)
+              </div>
+            </div>
+
+            {/* Preview */}
+            {scheduleDays.length > 0 && (
+              <div style={{
+                background: "rgba(96,165,250,0.05)", border: "1px solid rgba(96,165,250,0.2)",
+                borderRadius: "10px", padding: "12px", marginBottom: "14px",
+              }}>
+                <div style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "sans-serif", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  📋 Preview
+                </div>
+                {scheduleDays.sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b)).map(day => {
+                  const activeWeekStart2 = editingScheduleWeek || scheduleWeek;
+                  const wr3 = getWeekRange(activeWeekStart2);
+                  const dayIdx = DAYS.indexOf(day);
+                  const d = new Date(wr3.start + "T12:00:00");
+                  d.setDate(d.getDate() + dayIdx);
+                  return (
+                    <div key={day} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    }}>
+                      <span style={{ fontSize: "13px", color: "#e8d5b0", fontFamily: "sans-serif" }}>
+                        {DAYS_FULL[dayIdx]} — {formatDateShort(d.toISOString().slice(0,10))}
+                      </span>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.1)", padding: "2px 7px", borderRadius: "5px" }}>
+                          🇧🇪 {formatTime(belgiumTime)}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "#4ade80", fontFamily: "monospace", background: "rgba(74,222,128,0.1)", padding: "2px 7px", borderRadius: "5px" }}>
+                          🇵🇰 {formatTime(pkTime)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {scheduleDays.length === 0 && (
+              <div style={{ textAlign: "center", padding: "10px", color: "#4a5568", fontFamily: "sans-serif", fontSize: "12px", marginBottom: "14px" }}>
+                Upar se days select karein
+              </div>
+            )}
+
+            {/* Save + Cancel buttons */}
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => saveSchedule(editingScheduleWeek || scheduleWeek)} disabled={scheduleSaving} style={{
+                flex: 1,
+                background: scheduleSaving ? "rgba(96,165,250,0.3)" : "linear-gradient(135deg, rgba(96,165,250,0.85), rgba(59,130,246,0.95))",
+                color: "#fff", border: "none", borderRadius: "10px",
+                padding: "12px", fontSize: "14px", fontWeight: "bold",
+                cursor: scheduleSaving ? "not-allowed" : "pointer", fontFamily: "sans-serif",
+              }}>
+                {scheduleSaving ? "✓ Saved!" : editingScheduleWeek ? "💾 Update Schedule" : "💾 Save Schedule"}
+              </button>
+              <button onClick={() => { setShowSchedule(false); setEditingScheduleWeek(null); }} style={{
+                background: "rgba(255,255,255,0.06)", color: "#a08040",
+                border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
+                padding: "12px 18px", fontSize: "14px", cursor: "pointer", fontFamily: "sans-serif",
+              }}>Cancel</button>
             </div>
           </div>
         )}
 
+        {/* Add Class Form */}
         {showForm && (
           <div style={{
             background: "rgba(212,175,55,0.06)", border: "1px solid rgba(212,175,55,0.3)",
@@ -637,6 +917,7 @@ export default function App() {
           </div>
         )}
 
+        {/* Rate */}
         <div style={{
           background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: "12px", padding: "14px 16px", marginBottom: "16px",
@@ -652,6 +933,7 @@ export default function App() {
           {rate && <span style={{ color: "#4ade80", fontSize: "12px", fontFamily: "monospace" }}>${rate}/class</span>}
         </div>
 
+        {/* Month Dropdown */}
         <div style={{ marginBottom: "16px" }}>
           <Label>📅 Select Month</Label>
           <select value={activeMonth} onChange={e => setActiveMonth(e.target.value)} style={{
@@ -670,13 +952,14 @@ export default function App() {
               const unpd = cnt - pd;
               return (
                 <option key={m} value={m} style={{ background: "#1a2940" }}>
-                  {MONTHS_FULL[moo-1]} {y}  -  {cnt} classes  {unpd > 0 ? `| ⚠ ${unpd} unpaid` : cnt > 0 ? "| ✓ All paid" : ""}
+                  {MONTHS_FULL[moo-1]} {y}  —  {cnt} classes  {unpd > 0 ? `| ⚠ ${unpd} unpaid` : cnt > 0 ? "| ✓ All paid" : ""}
                 </option>
               );
             })}
           </select>
         </div>
 
+        {/* Summary */}
         {filtered.length > 0 && (
           <div style={{ marginBottom: "18px" }}>
             <div style={{
@@ -695,7 +978,7 @@ export default function App() {
                 padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px",
               }}>
                 <span style={{ color: "#f87171", fontFamily: "sans-serif", fontSize: "13px", fontWeight: "bold" }}>
-                  ⚠️ {unpaidCount} class{unpaidCount > 1 ? "es" : ""} baaki{unpaidAmount ? ` - $${unpaidAmount} pending` : ""}
+                  ⚠️ {unpaidCount} class{unpaidCount > 1 ? "es" : ""} baaki{unpaidAmount ? ` — $${unpaidAmount} pending` : ""}
                 </span>
                 <button onClick={markAllPaid} style={{
                   background: "linear-gradient(135deg, rgba(74,222,128,0.7), rgba(34,197,94,0.8))",
@@ -753,7 +1036,7 @@ export default function App() {
                         <span style={{ fontSize: "13px", color: "#e8d5b0", fontFamily: "sans-serif", fontWeight: "bold" }}>{dayName}</span>
                         {s.start && (
                           <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.1)", padding: "2px 7px", borderRadius: "6px" }}>
-                            {formatTime(s.start)}{s.end ? ` - ${formatTime(s.end)}` : ""}
+                            {formatTime(s.start)}{s.end ? ` – ${formatTime(s.end)}` : ""}
                           </span>
                         )}
                         {s.duration && (
@@ -798,7 +1081,7 @@ export default function App() {
                   {expandedId === s._id && (
                     <div style={{ borderTop: "1px solid rgba(212,175,55,0.2)", background: "rgba(212,175,55,0.04)", padding: "14px 16px", animation: "fadeIn 0.2s ease" }}>
                       <div style={{ fontSize: "11px", color: "#a08040", marginBottom: "8px", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        📖 Lesson Notes - {dayName}, {dayNum} {monthShort}
+                        📖 Lesson Notes — {dayName}, {dayNum} {monthShort}
                       </div>
                       <textarea
                         value={editingNotes[s._id] ?? s.notes ?? ""}
@@ -848,7 +1131,7 @@ export default function App() {
         input[type=time]::-webkit-calendar-picker-indicator { filter: invert(0.7) sepia(1) saturate(2) hue-rotate(5deg); }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 2px; }
-        select option { background: #1a2940; color: "#e8d5b0"; }
+        select option { background: #1a2940; color: #e8d5b0; }
       `}</style>
     </div>
   );
