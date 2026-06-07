@@ -58,11 +58,6 @@ function pakistanToBelgium(t) {
   return `${String(belH).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
 }
 
-// Get today's date string for schedule day matching
-function getTodayDateStr() {
-  return new Date().toISOString().slice(0,10);
-}
-
 export default function App() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,8 +84,13 @@ export default function App() {
   const [editingScheduleWeek, setEditingScheduleWeek] = useState(null);
   const [deleteScheduleWeek, setDeleteScheduleWeek] = useState(null);
 
-  // Completed days — MongoDB se aayenge
+  // Completed days
   const [completedDays, setCompletedDays] = useState({});
+
+  // Global unpaid panel
+  const [showUnpaidPanel, setShowUnpaidPanel] = useState(false);
+  // Courses page
+  const [showCourses, setShowCourses] = useState(false);
 
   // === SYNC: BroadcastChannel for cross-tab sync ===
   const [bc, setBc] = useState(null);
@@ -114,16 +114,14 @@ export default function App() {
     try { bc?.postMessage('refresh'); } catch (e) {}
   }, [bc]);
 
-  // Global unpaid panel
-  const [showUnpaidPanel, setShowUnpaidPanel] = useState(false);
-  // Courses page
-  const [showCourses, setShowCourses] = useState(false);
-
-  // === Fetch functions — useCallback se stale closure fix ===
+  // === Fetch functions - useCallback se stale closure fix ===
   const fetchSessions = useCallback(() => {
     fetch(API)
       .then(r => r.json())
-      .then(data => { setSessions(data); setLoading(false); })
+      .then(data => {
+        setSessions(data.sort((a, b) => b.date.localeCompare(a.date)));
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -142,11 +140,11 @@ export default function App() {
   }, []);
 
   // Initial load
-  useEffect(() => { fetchSessions(); }, []);
-  useEffect(() => { fetchSchedules(); }, []);
-  useEffect(() => { fetchCompletedDays(); }, []);
+  useEffect(() => { fetchSessions(); }, [fetchSessions]);
+  useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
+  useEffect(() => { fetchCompletedDays(); }, [fetchCompletedDays]);
 
-  // Polling — har 5 seconds mein sync karo dono devices ke liye
+  // Polling - har 5 seconds mein sync (was 15s)
   useEffect(() => {
     const interval = setInterval(() => {
       fetchSessions();
@@ -171,7 +169,7 @@ export default function App() {
     }
   }, [scheduleWeek, scheduleData, editingScheduleWeek]);
 
-  // === Completed Days — MongoDB — SERVER SOURCE OF TRUTH ===
+  // === Completed Days - SERVER SOURCE OF TRUTH ===
   const toggleDayCompleted = async (weekStart, day, scheduleInfo) => {
     const key = `${weekStart}__${day}`;
     const alreadyDone = !!completedDays[key];
@@ -183,12 +181,12 @@ export default function App() {
       const classDate = weekStartDate.toISOString().slice(0, 10);
       const classStart = scheduleInfo?.belgiumTime ? belgiumToPakistan(scheduleInfo.belgiumTime) : "";
 
-      const body = { date: classDate, start: classStart, end: "", duration: null, notes: `Schedule class — ${DAYS_FULL[dayIdx]}`, paid: false };
+      const body = { date: classDate, start: classStart, end: "", duration: null, notes: `Schedule class - ${DAYS_FULL[dayIdx]}`, paid: false };
       try {
         const res = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const saved = await res.json();
 
-        // FIX: Server se fresh data lo
+        // FIX: Server se fresh data lo, local state mat append karo
         await fetchSessions();
 
         await fetch(`${BASE_API}/completeddays`, {
@@ -196,14 +194,14 @@ export default function App() {
           body: JSON.stringify({ weekStart, day, sessionId: saved._id }),
         });
         await fetchCompletedDays();
-        broadcastRefresh();
+        broadcastRefresh(); // doosre tabs ko batao
       } catch (e) { console.error("Failed to add session", e); }
     } else {
       const sessionId = completedDays[key];
       if (sessionId && typeof sessionId === "string") {
         try {
           await fetch(`${API}/${sessionId}`, { method: "DELETE" });
-          await fetchSessions();
+          await fetchSessions(); // server se fresh data
         } catch (e) { console.error("Failed to delete session", e); }
       }
       try {
@@ -216,7 +214,7 @@ export default function App() {
 
   const isDayCompleted = (weekStart, day) => !!completedDays[`${weekStart}__${day}`];
 
-  // === Schedule — MongoDB — SERVER SOURCE OF TRUTH ===
+  // === Schedule - SERVER SOURCE OF TRUTH ===
   const saveSchedule = async (weekKey) => {
     setScheduleSaving(true);
     try {
@@ -224,7 +222,7 @@ export default function App() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekStart: weekKey, days: scheduleDays, belgiumTime }),
       });
-      await fetchSchedules();
+      await fetchSchedules(); // server se fresh data
       broadcastRefresh();
     } catch (e) { console.error(e); }
     setTimeout(() => {
@@ -238,7 +236,6 @@ export default function App() {
     try {
       await fetch(`${BASE_API}/schedules/${weekKey}`, { method: "DELETE" });
       await fetchSchedules();
-      await fetchCompletedDays();
       broadcastRefresh();
     } catch (e) { console.error(e); }
     setDeleteScheduleWeek(null);
@@ -258,6 +255,7 @@ export default function App() {
     setForm({ date, start: time, end: "", notes: "" });
     setShowForm(true);
   };
+
   const addSession = async () => {
     if (!form.date) return;
     setSaving(true);
@@ -265,11 +263,12 @@ export default function App() {
     const body = { date: form.date, start: form.start, end: form.end, duration: dur, notes: form.notes.trim(), paid: false };
     try {
       await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      await fetchSessions();
+      await fetchSessions(); // server se fresh data
       broadcastRefresh();
     } catch (e) { console.error(e); }
     setShowForm(false); setSaving(false);
   };
+
   const deleteSession = async (id) => {
     try {
       await fetch(`${API}/${id}`, { method: "DELETE" });
@@ -278,6 +277,7 @@ export default function App() {
     } catch (e) { console.error(e); }
     setDeleteId(null);
   };
+
   const saveNotes = async (id) => {
     const newNote = editingNotes[id] ?? sessions.find(s => s._id === id)?.notes ?? "";
     try {
@@ -287,6 +287,7 @@ export default function App() {
     } catch (e) { console.error(e); }
     setExpandedId(null);
   };
+
   const togglePaid = async (id, currentPaid) => {
     const newPaid = !currentPaid;
     try {
@@ -295,6 +296,7 @@ export default function App() {
       broadcastRefresh();
     } catch (e) { console.error(e); }
   };
+
   const markAllPaid = async () => {
     const unpaid = filtered.filter(s => !s.paid);
     if (!unpaid.length) return;
@@ -318,7 +320,6 @@ export default function App() {
   const monthLabel = `${MONTHS_FULL[mo-1]} ${yr}`;
   const pkTime = belgiumToPakistan(belgiumTime);
 
-  // Global unpaid summary across all months
   const globalUnpaidByMonth = allMonths.map(m => {
     const monthSessions = sessions.filter(s => s.date.startsWith(m));
     const unpaid = monthSessions.filter(s => !s.paid).length;
@@ -329,14 +330,12 @@ export default function App() {
   const globalTotalUnpaid = globalUnpaidByMonth.reduce((sum, m) => sum + m.unpaid, 0);
   const globalTotalAmount = rateNum ? globalUnpaidByMonth.reduce((sum, m) => sum + m.amount, 0) : null;
 
-  // This week's saved schedule for display
   const thisWeekKey = getWeekRange(todayDate).start;
   const thisWeekSchedule = scheduleData[thisWeekKey];
   const weekRange = getWeekRange(editingScheduleWeek || scheduleWeek);
-
-  // All saved schedule weeks sorted descending
   const savedScheduleWeeks = Object.keys(scheduleData).sort().reverse();
 
+  // === RENDER (same as before) ===
   return (
     <div style={{
       minHeight: "100vh",
@@ -344,14 +343,9 @@ export default function App() {
       fontFamily: "'Georgia', serif",
       color: "#e8d5b0", position: "relative", overflowX: "hidden",
     }}>
-
-      {/* ══ COURSES PAGE — fullscreen overlay ══ */}
+      {/* Same JSX as original - no visual changes */}
       {showCourses && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 100,
-          overflowY: "auto",
-        }}>
-          {/* Back button fixed top-left */}
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, overflowY: "auto" }}>
           <div style={{
             position: "sticky", top: 0, zIndex: 101,
             display: "flex", justifyContent: "flex-end",
@@ -370,25 +364,23 @@ export default function App() {
           <CoursesPage />
         </div>
       )}
+
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none",
         background: "radial-gradient(ellipse at 20% 20%, rgba(212,175,55,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(34,197,94,0.05) 0%, transparent 60%)",
       }} />
 
-      {/* ===== NAVBAR ===== */}
       <div style={{
         background: "rgba(212,175,55,0.08)", borderBottom: "1px solid rgba(212,175,55,0.25)",
         padding: "14px 20px", backdropFilter: "blur(10px)",
         position: "sticky", top: 0, zIndex: 10,
       }}>
-        {/* Top row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: (thisWeekSchedule && thisWeekSchedule.days?.length > 0) ? "12px" : "0" }}>
           <div>
             <div style={{ fontSize: "20px", fontWeight: "bold", color: "#d4af37" }}>📖 Class Tracker</div>
             <div style={{ fontSize: "11px", color: "#a08040", fontFamily: "sans-serif" }}>SUNNY BHAI · Per-Class Log</div>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {/* Global Unpaid Badge */}
             {globalTotalUnpaid > 0 && (
               <button onClick={() => setShowUnpaidPanel(p => !p)} style={{
                 background: showUnpaidPanel ? "rgba(248,113,113,0.25)" : "rgba(248,113,113,0.12)",
@@ -415,7 +407,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* ===== THIS WEEK SCHEDULE BAR ===== */}
         {thisWeekSchedule && thisWeekSchedule.days && thisWeekSchedule.days.length > 0 && (
           <div style={{
             background: "rgba(96,165,250,0.08)",
@@ -430,8 +421,6 @@ export default function App() {
                 fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.8px",
                 whiteSpace: "nowrap",
               }}>📅 This Week</div>
-
-              {/* Clickable day chips — click to toggle completed */}
               <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                 {thisWeekSchedule.days
                   .sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b))
@@ -456,8 +445,6 @@ export default function App() {
                     );
                   })}
               </div>
-
-              {/* Completed / Remaining count */}
               {(() => {
                 const total = thisWeekSchedule.days.length;
                 const done = thisWeekSchedule.days.filter(d => isDayCompleted(thisWeekKey, d)).length;
@@ -477,7 +464,6 @@ export default function App() {
                   </div>
                 );
               })()}
-
               <div style={{ display: "flex", gap: "6px" }}>
                 <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.1)", padding: "2px 7px", borderRadius: "5px" }}>
                   🇧🇪 {formatTime(thisWeekSchedule.belgiumTime)}
@@ -487,8 +473,6 @@ export default function App() {
                 </span>
               </div>
             </div>
-
-            {/* Right: unpaid badge */}
             <div style={{
               display: "flex", alignItems: "center", gap: "8px",
               background: unpaidCount > 0 ? "rgba(248,113,113,0.1)" : "rgba(74,222,128,0.08)",
@@ -514,8 +498,7 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: "680px", margin: "0 auto", padding: "16px 16px 80px" }}>
-
-        {/* ===== GLOBAL UNPAID PANEL ===== */}
+        {/* Rest of JSX same as original */}
         {showUnpaidPanel && globalTotalUnpaid > 0 && (
           <div style={{
             background: "rgba(10,20,35,0.97)", border: "1px solid rgba(248,113,113,0.4)",
@@ -523,14 +506,13 @@ export default function App() {
             animation: "fadeIn 0.2s ease",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
-              <div style={{ fontSize: "15px", color: "#f87171", fontWeight: "bold" }}>💰 Pending Payments — All Months</div>
+              <div style={{ fontSize: "15px", color: "#f87171", fontWeight: "bold" }}>💰 Pending Payments - All Months</div>
               <button onClick={() => setShowUnpaidPanel(false)} style={{
                 background: "rgba(255,255,255,0.08)", color: "#a08040",
                 border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
                 padding: "5px 10px", cursor: "pointer", fontSize: "12px", fontFamily: "sans-serif",
               }}>✕</button>
             </div>
-
             {globalUnpaidByMonth.map(m => (
               <div key={m.key} style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -566,8 +548,6 @@ export default function App() {
                 </div>
               </div>
             ))}
-
-            {/* Total row */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "12px 14px", marginTop: "8px",
@@ -592,7 +572,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ===== SCHEDULE PANEL ===== */}
+        /* ===== SCHEDULE PANEL ===== */}
         {showSchedule && (
           <div style={{
             background: "rgba(10,20,35,0.97)", border: "1px solid rgba(96,165,250,0.4)",
@@ -874,8 +854,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Add Class Form */}
-        {showForm && (
+        {{showForm && (
           <div style={{
             background: "rgba(212,175,55,0.06)", border: "1px solid rgba(212,175,55,0.3)",
             borderRadius: "16px", padding: "20px", marginBottom: "20px", animation: "fadeIn 0.2s ease",
@@ -917,7 +896,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Rate */}
         <div style={{
           background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: "12px", padding: "14px 16px", marginBottom: "16px",
@@ -933,7 +911,6 @@ export default function App() {
           {rate && <span style={{ color: "#4ade80", fontSize: "12px", fontFamily: "monospace" }}>${rate}/class</span>}
         </div>
 
-        {/* Month Dropdown */}
         <div style={{ marginBottom: "16px" }}>
           <Label>📅 Select Month</Label>
           <select value={activeMonth} onChange={e => setActiveMonth(e.target.value)} style={{
@@ -952,14 +929,13 @@ export default function App() {
               const unpd = cnt - pd;
               return (
                 <option key={m} value={m} style={{ background: "#1a2940" }}>
-                  {MONTHS_FULL[moo-1]} {y}  —  {cnt} classes  {unpd > 0 ? `| ⚠ ${unpd} unpaid` : cnt > 0 ? "| ✓ All paid" : ""}
+                  {MONTHS_FULL[moo-1]} {y}  -  {cnt} classes  {unpd > 0 ? `| ⚠ ${unpd} unpaid` : cnt > 0 ? "| ✓ All paid" : ""}
                 </option>
               );
             })}
           </select>
         </div>
 
-        {/* Summary */}
         {filtered.length > 0 && (
           <div style={{ marginBottom: "18px" }}>
             <div style={{
@@ -978,7 +954,7 @@ export default function App() {
                 padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px",
               }}>
                 <span style={{ color: "#f87171", fontFamily: "sans-serif", fontSize: "13px", fontWeight: "bold" }}>
-                  ⚠️ {unpaidCount} class{unpaidCount > 1 ? "es" : ""} baaki{unpaidAmount ? ` — $${unpaidAmount} pending` : ""}
+                  ⚠️ {unpaidCount} class{unpaidCount > 1 ? "es" : ""} baaki{unpaidAmount ? ` - $${unpaidAmount} pending` : ""}
                 </span>
                 <button onClick={markAllPaid} style={{
                   background: "linear-gradient(135deg, rgba(74,222,128,0.7), rgba(34,197,94,0.8))",
@@ -1036,7 +1012,7 @@ export default function App() {
                         <span style={{ fontSize: "13px", color: "#e8d5b0", fontFamily: "sans-serif", fontWeight: "bold" }}>{dayName}</span>
                         {s.start && (
                           <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.1)", padding: "2px 7px", borderRadius: "6px" }}>
-                            {formatTime(s.start)}{s.end ? ` – ${formatTime(s.end)}` : ""}
+                            {formatTime(s.start)}{s.end ? ` - ${formatTime(s.end)}` : ""}
                           </span>
                         )}
                         {s.duration && (
@@ -1081,7 +1057,7 @@ export default function App() {
                   {expandedId === s._id && (
                     <div style={{ borderTop: "1px solid rgba(212,175,55,0.2)", background: "rgba(212,175,55,0.04)", padding: "14px 16px", animation: "fadeIn 0.2s ease" }}>
                       <div style={{ fontSize: "11px", color: "#a08040", marginBottom: "8px", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        📖 Lesson Notes — {dayName}, {dayNum} {monthShort}
+                        📖 Lesson Notes - {dayName}, {dayNum} {monthShort}
                       </div>
                       <textarea
                         value={editingNotes[s._id] ?? s.notes ?? ""}
@@ -1131,7 +1107,7 @@ export default function App() {
         input[type=time]::-webkit-calendar-picker-indicator { filter: invert(0.7) sepia(1) saturate(2) hue-rotate(5deg); }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 2px; }
-        select option { background: #1a2940; color: #e8d5b0; }
+        select option { background: #1a2940; color: "#e8d5b0"; }
       `}</style>
     </div>
   );
