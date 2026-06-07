@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import CoursesPage from "./CoursesPage";
 
 const API = "/api/sessions";
@@ -25,7 +25,11 @@ function duration(start, end) {
 }
 function getNow() {
   const now = new Date();
-  const date = now.toISOString().slice(0,10);
+  // Local date (not UTC) — Pakistan mein sahi date ke liye
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const date = `${year}-${month}-${day}`;
   const hh = String(now.getHours()).padStart(2,"0");
   const mm = String(now.getMinutes()).padStart(2,"0");
   return { date, time: `${hh}:${mm}` };
@@ -137,16 +141,12 @@ export default function App() {
   // Rate localStorage mein save karo
   useEffect(() => { localStorage.setItem("class_rate", rate); }, [rate]);
 
-  // Sirf week change ya edit mode change hone par sync karo — scheduleData change pe NAHI
-  const lastSyncedWeek = useRef(null);
-  useEffect(() => {
-    const activeWeek = editingScheduleWeek || scheduleWeek;
-    if (lastSyncedWeek.current === activeWeek) return; // already synced
-    lastSyncedWeek.current = activeWeek;
-    const wd = scheduleData[activeWeek];
+  // Schedule panel open hone par current week load karo
+  const loadWeekData = (weekKey) => {
+    const wd = scheduleData[weekKey];
     if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
     else { setScheduleDays([]); setBelgiumTime("11:00"); }
-  }, [scheduleWeek, editingScheduleWeek]); // scheduleData intentionally removed
+  };
 
   // ── Completed Days — MongoDB ──
   const toggleDayCompleted = async (weekStart, day, scheduleInfo) => {
@@ -236,7 +236,9 @@ export default function App() {
   const changeWeek = (dir) => {
     const d = new Date(scheduleWeek + "T12:00:00");
     d.setDate(d.getDate() + dir * 7);
-    setScheduleWeek(d.toISOString().slice(0,10));
+    const newWeek = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    setScheduleWeek(newWeek);
+    loadWeekData(newWeek);
   };
 
   const openForm = () => {
@@ -301,8 +303,12 @@ export default function App() {
   const globalTotalUnpaid = globalUnpaidByMonth.reduce((sum, m) => sum + m.unpaid, 0);
   const globalTotalAmount = rateNum ? globalUnpaidByMonth.reduce((sum, m) => sum + m.amount, 0) : null;
 
-  // This week's saved schedule for display
-  const thisWeekKey = getWeekRange(todayDate).start;
+  // This week's saved schedule — hamesha current local date se compute karo
+  const todayLocal = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;
+  })();
+  const thisWeekKey = getWeekRange(todayLocal).start;
   const thisWeekSchedule = scheduleData[thisWeekKey];
   const weekRange = getWeekRange(editingScheduleWeek || scheduleWeek);
 
@@ -378,11 +384,13 @@ export default function App() {
               padding: "9px 14px", fontFamily: "sans-serif", fontSize: "12px",
               fontWeight: "bold", cursor: "pointer",
             }}>📚 Courses</button>
-            <button onClick={() => { 
-              setShowSchedule(s => !s); 
-              setShowForm(false); 
+            <button onClick={() => {
+              const currentWeek = getWeekRange(todayLocal).start;
+              setScheduleWeek(currentWeek);
+              loadWeekData(currentWeek);
+              setShowSchedule(s => !s);
+              setShowForm(false);
               setEditingScheduleWeek(null);
-              setScheduleWeek(getWeekRange(todayDate).start); // hamesha current week pe open ho
             }} style={{
               background: showSchedule ? "rgba(96,165,250,0.2)" : "rgba(96,165,250,0.12)", color: "#60a5fa",
               border: "1px solid rgba(96,165,250,0.4)", borderRadius: "9px",
@@ -719,7 +727,11 @@ export default function App() {
                   border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
                   padding: "8px 12px", cursor: "pointer", fontSize: "14px",
                 }}>▶</button>
-                <button onClick={() => setScheduleWeek(getWeekRange(todayDate).start)} style={{
+                <button onClick={() => {
+                  const tw = getWeekRange(todayLocal).start;
+                  setScheduleWeek(tw);
+                  loadWeekData(tw);
+                }} style={{
                   background: "rgba(212,175,55,0.1)", color: "#d4af37",
                   border: "1px solid rgba(212,175,55,0.3)", borderRadius: "8px",
                   padding: "8px 10px", cursor: "pointer", fontSize: "11px", fontFamily: "sans-serif",
