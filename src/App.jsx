@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import CoursesPage from "./CoursesPage";
 
 const API = "/api/sessions";
@@ -25,7 +25,10 @@ function duration(start, end) {
 }
 function getNow() {
   const now = new Date();
-  const date = now.toISOString().slice(0,10);
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const date = `${year}-${month}-${day}`;
   const hh = String(now.getHours()).padStart(2,"0");
   const mm = String(now.getMinutes()).padStart(2,"0");
   return { date, time: `${hh}:${mm}` };
@@ -77,9 +80,16 @@ export default function App() {
   // Schedule
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleWeek, setScheduleWeek] = useState(() => getWeekRange(todayDate).start);
-  const [scheduleData, setScheduleData] = useState({});
+  const [scheduleData, setScheduleData] = useState(() => {
+    try {
+      const stored = localStorage.getItem("class_schedules");
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
+  // FIX: scheduleDays aur belgiumTime ko alag track karo — "user ne touch kiya ya nahi"
   const [scheduleDays, setScheduleDays] = useState([]);
   const [belgiumTime, setBelgiumTime] = useState("11:00");
+  const [scheduleUserEdited, setScheduleUserEdited] = useState(false); // NEW: user ne manually edit kiya?
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [editingScheduleWeek, setEditingScheduleWeek] = useState(null);
   const [deleteScheduleWeek, setDeleteScheduleWeek] = useState(null);
@@ -92,84 +102,64 @@ export default function App() {
   // Courses page
   const [showCourses, setShowCourses] = useState(false);
 
-  // === SYNC: BroadcastChannel for cross-tab sync ===
-  const [bc, setBc] = useState(null);
-  useEffect(() => {
-    let channel;
-    try {
-      channel = new BroadcastChannel('class_tracker_sync');
-      channel.onmessage = (event) => {
-        if (event.data === 'refresh') {
-          fetchSessions();
-          fetchSchedules();
-          fetchCompletedDays();
-        }
-      };
-      setBc(channel);
-    } catch (e) { /* not supported */ }
-    return () => channel?.close();
-  }, []);
-
-  const broadcastRefresh = useCallback(() => {
-    try { bc?.postMessage('refresh'); } catch (e) {}
-  }, [bc]);
-
-  // === Fetch functions - useCallback se stale closure fix ===
-  const fetchSessions = useCallback(() => {
+  // ── Fetch functions ──
+  const fetchSessions = () => {
     fetch(API)
       .then(r => r.json())
-      .then(data => {
-        setSessions(data.sort((a, b) => b.date.localeCompare(a.date)));
-        setLoading(false);
-      })
+      .then(data => { setSessions(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  };
 
-  const fetchSchedules = useCallback(() => {
+  const fetchSchedules = () => {
     fetch(`${BASE_API}/schedules`)
       .then(r => r.json())
-      .then(data => setScheduleData(data))
+      .then(data => {
+        setScheduleData(data);
+        localStorage.setItem("class_schedules", JSON.stringify(data));
+        // FIX: polling se sirf scheduleData update karo — scheduleDays/belgiumTime ko mat chhuao
+        // agar user editing mein nahi hai tabhi quietly update karo
+      })
       .catch(() => {});
-  }, []);
+  };
 
-  const fetchCompletedDays = useCallback(() => {
+  const fetchCompletedDays = () => {
     fetch(`${BASE_API}/completeddays`)
       .then(r => r.json())
       .then(data => setCompletedDays(data))
       .catch(() => {});
-  }, []);
+  };
 
-  // Initial load
-  useEffect(() => { fetchSessions(); }, [fetchSessions]);
-  useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
-  useEffect(() => { fetchCompletedDays(); }, [fetchCompletedDays]);
+  useEffect(() => { fetchSessions(); }, []);
+  useEffect(() => { fetchSchedules(); }, []);
+  useEffect(() => { fetchCompletedDays(); }, []);
 
-  // Polling - har 5 seconds mein sync (was 15s)
+  // Polling
   useEffect(() => {
     const interval = setInterval(() => {
       fetchSessions();
       fetchSchedules();
       fetchCompletedDays();
-    }, 5000);
+    }, 15000);
     return () => clearInterval(interval);
-  }, [fetchSessions, fetchSchedules, fetchCompletedDays]);
+  }, []);
 
-  // Rate localStorage mein save karo
   useEffect(() => { localStorage.setItem("class_rate", rate); }, [rate]);
 
-  useEffect(() => {
-    if (editingScheduleWeek) {
-      const wd = scheduleData[editingScheduleWeek];
-      if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
-      else { setScheduleDays([]); setBelgiumTime("11:00"); }
+  // FIX: loadWeekData — sirf tab call karo jab schedule panel pehli baar khulay ya week navigate ho
+  // Yeh function ab "force" mode mein kaam karta hai — sirf explicit call par
+  const loadWeekData = (weekKey) => {
+    const wd = scheduleData[weekKey];
+    if (wd) {
+      setScheduleDays(wd.days || []);
+      setBelgiumTime(wd.belgiumTime || "11:00");
     } else {
-      const wd = scheduleData[scheduleWeek];
-      if (wd) { setScheduleDays(wd.days || []); setBelgiumTime(wd.belgiumTime || "11:00"); }
-      else { setScheduleDays([]); setBelgiumTime("11:00"); }
+      setScheduleDays([]);
+      setBelgiumTime("11:00");
     }
-  }, [scheduleWeek, scheduleData, editingScheduleWeek]);
+    setScheduleUserEdited(false); // fresh load — user ne abhi kuch nahi kiya
+  };
 
-  // === Completed Days - SERVER SOURCE OF TRUTH ===
+  // ── Completed Days ──
   const toggleDayCompleted = async (weekStart, day, scheduleInfo) => {
     const key = `${weekStart}__${day}`;
     const alreadyDone = !!completedDays[key];
@@ -181,40 +171,36 @@ export default function App() {
       const classDate = weekStartDate.toISOString().slice(0, 10);
       const classStart = scheduleInfo?.belgiumTime ? belgiumToPakistan(scheduleInfo.belgiumTime) : "";
 
-      const body = { date: classDate, start: classStart, end: "", duration: null, notes: `Schedule class - ${DAYS_FULL[dayIdx]}`, paid: false };
+      const body = { date: classDate, start: classStart, end: "", duration: null, notes: `Schedule class — ${DAYS_FULL[dayIdx]}`, paid: false };
       try {
         const res = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const saved = await res.json();
-
-        // FIX: Server se fresh data lo, local state mat append karo
-        await fetchSessions();
+        setSessions(prev => [saved, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
 
         await fetch(`${BASE_API}/completeddays`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ weekStart, day, sessionId: saved._id }),
         });
-        await fetchCompletedDays();
-        broadcastRefresh(); // doosre tabs ko batao
+        setCompletedDays(prev => ({ ...prev, [key]: saved._id }));
       } catch (e) { console.error("Failed to add session", e); }
     } else {
       const sessionId = completedDays[key];
       if (sessionId && typeof sessionId === "string") {
         try {
           await fetch(`${API}/${sessionId}`, { method: "DELETE" });
-          await fetchSessions(); // server se fresh data
+          setSessions(prev => prev.filter(s => s._id !== sessionId));
         } catch (e) { console.error("Failed to delete session", e); }
       }
       try {
         await fetch(`${BASE_API}/completeddays/${weekStart}/${day}`, { method: "DELETE" });
-        await fetchCompletedDays();
-        broadcastRefresh();
+        setCompletedDays(prev => { const n = { ...prev }; delete n[key]; return n; });
       } catch (e) { console.error(e); }
     }
   };
 
   const isDayCompleted = (weekStart, day) => !!completedDays[`${weekStart}__${day}`];
 
-  // === Schedule - SERVER SOURCE OF TRUTH ===
+  // ── Schedule — MongoDB ──
   const saveSchedule = async (weekKey) => {
     setScheduleSaving(true);
     try {
@@ -222,91 +208,103 @@ export default function App() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekStart: weekKey, days: scheduleDays, belgiumTime }),
       });
-      await fetchSchedules(); // server se fresh data
-      broadcastRefresh();
+      const newData = {
+        ...scheduleData,
+        [weekKey]: { days: scheduleDays, belgiumTime, savedAt: new Date().toISOString() }
+      };
+      setScheduleData(newData);
+      localStorage.setItem("class_schedules", JSON.stringify(newData));
     } catch (e) { console.error(e); }
     setTimeout(() => {
       setScheduleSaving(false);
       setEditingScheduleWeek(null);
-      if (!editingScheduleWeek) setShowSchedule(false);
-    }, 700);
+      setScheduleUserEdited(false);
+      setShowSchedule(false);
+    }, 500);
   };
 
   const deleteSchedule = async (weekKey) => {
+    const newData = { ...scheduleData };
+    delete newData[weekKey];
+    setScheduleData(newData);
+    setCompletedDays(prev => {
+      const n = { ...prev };
+      Object.keys(n).forEach(k => { if (k.startsWith(weekKey + "__")) delete n[k]; });
+      return n;
+    });
     try {
       await fetch(`${BASE_API}/schedules/${weekKey}`, { method: "DELETE" });
-      await fetchSchedules();
-      broadcastRefresh();
     } catch (e) { console.error(e); }
     setDeleteScheduleWeek(null);
   };
 
+  // FIX: toggleScheduleDay — user ka action, scheduleUserEdited = true set karo
   const toggleScheduleDay = (day) => {
-    setScheduleDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+    setScheduleUserEdited(true); // user ne manually touch kiya
+    setScheduleDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
   };
+
+  // FIX: changeWeek — sirf tab loadWeekData call karo jab user ne kuch edit nahi kiya
   const changeWeek = (dir) => {
+    if (editingScheduleWeek) return; // editing mode mein week nav nahi
     const d = new Date(scheduleWeek + "T12:00:00");
     d.setDate(d.getDate() + dir * 7);
-    setScheduleWeek(d.toISOString().slice(0,10));
+    const newWeek = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    setScheduleWeek(newWeek);
+    // Sirf load karo agar user ne current week mein kuch edit nahi kiya
+    if (!scheduleUserEdited) {
+      loadWeekData(newWeek);
+    } else {
+      // User ne kuch select kiya hua hai — sirf week key update karo, days mat badlo
+      setScheduleWeek(newWeek);
+    }
   };
+
+  const todayLocal = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;
+  })();
 
   const openForm = () => {
     const { date, time } = getNow();
     setForm({ date, start: time, end: "", notes: "" });
     setShowForm(true);
   };
-
   const addSession = async () => {
     if (!form.date) return;
     setSaving(true);
     const dur = duration(form.start, form.end);
     const body = { date: form.date, start: form.start, end: form.end, duration: dur, notes: form.notes.trim(), paid: false };
-    try {
-      await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      await fetchSessions(); // server se fresh data
-      broadcastRefresh();
-    } catch (e) { console.error(e); }
+    const res = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const saved = await res.json();
+    setSessions(prev => [saved, ...prev].sort((a,b) => b.date.localeCompare(a.date)));
     setShowForm(false); setSaving(false);
   };
-
   const deleteSession = async (id) => {
-    try {
-      await fetch(`${API}/${id}`, { method: "DELETE" });
-      await fetchSessions();
-      broadcastRefresh();
-    } catch (e) { console.error(e); }
+    await fetch(`${API}/${id}`, { method: "DELETE" });
+    setSessions(prev => prev.filter(s => s._id !== id));
     setDeleteId(null);
   };
-
   const saveNotes = async (id) => {
     const newNote = editingNotes[id] ?? sessions.find(s => s._id === id)?.notes ?? "";
-    try {
-      await fetch(`${API}/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes: newNote }) });
-      await fetchSessions();
-      broadcastRefresh();
-    } catch (e) { console.error(e); }
+    await fetch(`${API}/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes: newNote }) });
+    setSessions(prev => prev.map(s => s._id === id ? { ...s, notes: newNote } : s));
     setExpandedId(null);
   };
-
   const togglePaid = async (id, currentPaid) => {
     const newPaid = !currentPaid;
-    try {
-      await fetch(`${API}/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paid: newPaid }) });
-      await fetchSessions();
-      broadcastRefresh();
-    } catch (e) { console.error(e); }
+    await fetch(`${API}/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paid: newPaid }) });
+    setSessions(prev => prev.map(s => s._id === id ? { ...s, paid: newPaid } : s));
   };
-
   const markAllPaid = async () => {
     const unpaid = filtered.filter(s => !s.paid);
     if (!unpaid.length) return;
-    try {
-      await Promise.all(unpaid.map(s =>
-        fetch(`${API}/${s._id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paid: true }) })
-      ));
-      await fetchSessions();
-      broadcastRefresh();
-    } catch (e) { console.error(e); }
+    await Promise.all(unpaid.map(s =>
+      fetch(`${API}/${s._id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paid: true }) })
+    ));
+    setSessions(prev => prev.map(s => filtered.find(f => f._id === s._id) ? { ...s, paid: true } : s));
   };
 
   const allMonths = [...new Set([...sessions.map(s => s.date.slice(0,7)), activeMonth])].sort().reverse();
@@ -330,12 +328,13 @@ export default function App() {
   const globalTotalUnpaid = globalUnpaidByMonth.reduce((sum, m) => sum + m.unpaid, 0);
   const globalTotalAmount = rateNum ? globalUnpaidByMonth.reduce((sum, m) => sum + m.amount, 0) : null;
 
-  const thisWeekKey = getWeekRange(todayDate).start;
-  const thisWeekSchedule = scheduleData[thisWeekKey];
-  const weekRange = getWeekRange(editingScheduleWeek || scheduleWeek);
+  const thisWeekKey = getWeekRange(todayLocal).start;
+  const thisWeekSchedule = scheduleData[thisWeekKey] || null;
+  const activeWeekForDisplay = editingScheduleWeek || scheduleWeek;
+  const weekRange = getWeekRange(activeWeekForDisplay);
+
   const savedScheduleWeeks = Object.keys(scheduleData).sort().reverse();
 
-  // === RENDER (same as before) ===
   return (
     <div style={{
       minHeight: "100vh",
@@ -343,7 +342,8 @@ export default function App() {
       fontFamily: "'Georgia', serif",
       color: "#e8d5b0", position: "relative", overflowX: "hidden",
     }}>
-      {/* Same JSX as original - no visual changes */}
+
+      {/* COURSES PAGE */}
       {showCourses && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, overflowY: "auto" }}>
           <div style={{
@@ -370,6 +370,7 @@ export default function App() {
         background: "radial-gradient(ellipse at 20% 20%, rgba(212,175,55,0.07) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(34,197,94,0.05) 0%, transparent 60%)",
       }} />
 
+      {/* ===== NAVBAR ===== */}
       <div style={{
         background: "rgba(212,175,55,0.08)", borderBottom: "1px solid rgba(212,175,55,0.25)",
         padding: "14px 20px", backdropFilter: "blur(10px)",
@@ -398,7 +399,20 @@ export default function App() {
               padding: "9px 14px", fontFamily: "sans-serif", fontSize: "12px",
               fontWeight: "bold", cursor: "pointer",
             }}>📚 Courses</button>
-            <button onClick={() => { setShowSchedule(s => !s); setShowForm(false); setEditingScheduleWeek(null); }} style={{
+
+            {/* FIX: Schedule button — sirf pehli baar open hone par loadWeekData call karo */}
+            <button onClick={() => {
+              if (!showSchedule) {
+                // Panel ab khul raha hai — fresh load karo
+                const currentWeek = getWeekRange(todayLocal).start;
+                setScheduleWeek(currentWeek);
+                setEditingScheduleWeek(null);
+                setScheduleUserEdited(false);
+                loadWeekData(currentWeek);
+                setShowForm(false);
+              }
+              setShowSchedule(s => !s);
+            }} style={{
               background: showSchedule ? "rgba(96,165,250,0.2)" : "rgba(96,165,250,0.12)", color: "#60a5fa",
               border: "1px solid rgba(96,165,250,0.4)", borderRadius: "9px",
               padding: "9px 14px", fontFamily: "sans-serif", fontSize: "12px",
@@ -407,6 +421,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* THIS WEEK SCHEDULE BAR */}
         {thisWeekSchedule && thisWeekSchedule.days && thisWeekSchedule.days.length > 0 && (
           <div style={{
             background: "rgba(96,165,250,0.08)",
@@ -421,6 +436,7 @@ export default function App() {
                 fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.8px",
                 whiteSpace: "nowrap",
               }}>📅 This Week</div>
+
               <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                 {thisWeekSchedule.days
                   .sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b))
@@ -445,6 +461,7 @@ export default function App() {
                     );
                   })}
               </div>
+
               {(() => {
                 const total = thisWeekSchedule.days.length;
                 const done = thisWeekSchedule.days.filter(d => isDayCompleted(thisWeekKey, d)).length;
@@ -464,6 +481,7 @@ export default function App() {
                   </div>
                 );
               })()}
+
               <div style={{ display: "flex", gap: "6px" }}>
                 <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.1)", padding: "2px 7px", borderRadius: "5px" }}>
                   🇧🇪 {formatTime(thisWeekSchedule.belgiumTime)}
@@ -473,6 +491,7 @@ export default function App() {
                 </span>
               </div>
             </div>
+
             <div style={{
               display: "flex", alignItems: "center", gap: "8px",
               background: unpaidCount > 0 ? "rgba(248,113,113,0.1)" : "rgba(74,222,128,0.08)",
@@ -498,7 +517,8 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: "680px", margin: "0 auto", padding: "16px 16px 80px" }}>
-        {/* Rest of JSX same as original */}
+
+        {/* GLOBAL UNPAID PANEL */}
         {showUnpaidPanel && globalTotalUnpaid > 0 && (
           <div style={{
             background: "rgba(10,20,35,0.97)", border: "1px solid rgba(248,113,113,0.4)",
@@ -506,7 +526,7 @@ export default function App() {
             animation: "fadeIn 0.2s ease",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
-              <div style={{ fontSize: "15px", color: "#f87171", fontWeight: "bold" }}>💰 Pending Payments - All Months</div>
+              <div style={{ fontSize: "15px", color: "#f87171", fontWeight: "bold" }}>💰 Pending Payments — All Months</div>
               <button onClick={() => setShowUnpaidPanel(false)} style={{
                 background: "rgba(255,255,255,0.08)", color: "#a08040",
                 border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
@@ -525,9 +545,7 @@ export default function App() {
                   <div style={{ fontSize: "13px", color: "#e8d5b0", fontFamily: "sans-serif", fontWeight: "bold" }}>
                     {m.label}
                     {m.key === activeMonth && (
-                      <span style={{ marginLeft: "6px", fontSize: "10px", color: "#fbbf24", background: "rgba(251,191,36,0.15)", padding: "1px 6px", borderRadius: "4px" }}>
-                        current
-                      </span>
+                      <span style={{ marginLeft: "6px", fontSize: "10px", color: "#fbbf24", background: "rgba(251,191,36,0.15)", padding: "1px 6px", borderRadius: "4px" }}>current</span>
                     )}
                   </div>
                   <span style={{ fontSize: "12px", color: "#f87171", fontFamily: "sans-serif" }}>
@@ -536,9 +554,7 @@ export default function App() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   {m.amount !== null && (
-                    <span style={{ fontSize: "16px", fontWeight: "bold", color: "#f87171", fontFamily: "monospace" }}>
-                      ${m.amount.toFixed(2)}
-                    </span>
+                    <span style={{ fontSize: "16px", fontWeight: "bold", color: "#f87171", fontFamily: "monospace" }}>${m.amount.toFixed(2)}</span>
                   )}
                   <button onClick={() => { setActiveMonth(m.key); setShowUnpaidPanel(false); }} style={{
                     background: "rgba(212,175,55,0.1)", color: "#d4af37",
@@ -551,21 +567,14 @@ export default function App() {
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "12px 14px", marginTop: "8px",
-              background: "rgba(248,113,113,0.08)",
-              border: "1px solid rgba(248,113,113,0.3)",
+              background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)",
               borderRadius: "10px",
             }}>
-              <div style={{ fontSize: "14px", color: "#fca5a5", fontFamily: "sans-serif", fontWeight: "bold" }}>
-                🔴 Total Outstanding
-              </div>
+              <div style={{ fontSize: "14px", color: "#fca5a5", fontFamily: "sans-serif", fontWeight: "bold" }}>🔴 Total Outstanding</div>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ fontSize: "13px", color: "#f87171", fontFamily: "sans-serif" }}>
-                  {globalTotalUnpaid} classes
-                </span>
+                <span style={{ fontSize: "13px", color: "#f87171", fontFamily: "sans-serif" }}>{globalTotalUnpaid} classes</span>
                 {globalTotalAmount !== null && (
-                  <span style={{ fontSize: "20px", fontWeight: "bold", color: "#f87171", fontFamily: "monospace" }}>
-                    ${globalTotalAmount.toFixed(2)}
-                  </span>
+                  <span style={{ fontSize: "20px", fontWeight: "bold", color: "#f87171", fontFamily: "monospace" }}>${globalTotalAmount.toFixed(2)}</span>
                 )}
               </div>
             </div>
@@ -579,12 +588,11 @@ export default function App() {
             borderRadius: "16px", padding: "20px", marginBottom: "20px",
             animation: "fadeIn 0.2s ease",
           }}>
-            {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
               <div style={{ fontSize: "15px", color: "#60a5fa", fontWeight: "bold" }}>
                 📅 Weekly Schedule — Belgium Student
               </div>
-              <button onClick={() => { setShowSchedule(false); setEditingScheduleWeek(null); }} style={{
+              <button onClick={() => { setShowSchedule(false); setEditingScheduleWeek(null); setScheduleUserEdited(false); }} style={{
                 background: "rgba(255,255,255,0.08)", color: "#a08040",
                 border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
                 padding: "6px 12px", cursor: "pointer", fontSize: "13px", fontFamily: "sans-serif",
@@ -636,19 +644,18 @@ export default function App() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: "6px" }}>
-                        {/* Edit button */}
                         <button onClick={() => {
                           setEditingScheduleWeek(wk);
                           setScheduleWeek(wk);
                           const wd2 = scheduleData[wk];
                           setScheduleDays(wd2?.days || []);
                           setBelgiumTime(wd2?.belgiumTime || "11:00");
+                          setScheduleUserEdited(false); // edit mode start — fresh load
                         }} style={{
                           background: "rgba(212,175,55,0.1)", color: "#d4af37",
                           border: "1px solid rgba(212,175,55,0.3)", borderRadius: "7px",
                           padding: "5px 10px", fontSize: "12px", cursor: "pointer", fontFamily: "sans-serif",
                         }}>✏️ Edit</button>
-                        {/* Delete button */}
                         {deleteScheduleWeek === wk ? (
                           <div style={{ display: "flex", gap: "4px" }}>
                             <button onClick={() => deleteSchedule(wk)} style={{
@@ -690,7 +697,12 @@ export default function App() {
                 <div style={{ fontSize: "13px", color: "#d4af37", fontFamily: "sans-serif", fontWeight: "bold" }}>
                   ✏️ Editing: {formatDateShort(getWeekRange(editingScheduleWeek).start)} — {formatDateShort(getWeekRange(editingScheduleWeek).end)}
                 </div>
-                <button onClick={() => setEditingScheduleWeek(null)} style={{
+                <button onClick={() => {
+                  setEditingScheduleWeek(null);
+                  setScheduleUserEdited(false);
+                  // Cancel par original data wapas load karo
+                  loadWeekData(scheduleWeek);
+                }} style={{
                   background: "rgba(255,255,255,0.06)", color: "#a08040",
                   border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px",
                   padding: "4px 8px", fontSize: "11px", cursor: "pointer", fontFamily: "sans-serif",
@@ -722,7 +734,13 @@ export default function App() {
                   border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px",
                   padding: "8px 12px", cursor: "pointer", fontSize: "14px",
                 }}>▶</button>
-                <button onClick={() => setScheduleWeek(getWeekRange(todayDate).start)} style={{
+                <button onClick={() => {
+                  const tw = getWeekRange(todayLocal).start;
+                  setScheduleWeek(tw);
+                  if (!scheduleUserEdited) {
+                    loadWeekData(tw);
+                  }
+                }} style={{
                   background: "rgba(212,175,55,0.1)", color: "#d4af37",
                   border: "1px solid rgba(212,175,55,0.3)", borderRadius: "8px",
                   padding: "8px 10px", cursor: "pointer", fontSize: "11px", fontFamily: "sans-serif",
@@ -736,8 +754,7 @@ export default function App() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "6px" }}>
                 {DAYS.map((day, i) => {
                   const selected = scheduleDays.includes(day);
-                  const activeWeekStart = editingScheduleWeek || scheduleWeek;
-                  const wr2 = getWeekRange(activeWeekStart);
+                  const wr2 = getWeekRange(activeWeekForDisplay);
                   const d = new Date(wr2.start + "T12:00:00");
                   d.setDate(d.getDate() + i);
                   const dateNum = d.getDate();
@@ -770,7 +787,7 @@ export default function App() {
               }}>
                 <div>
                   <div style={{ fontSize: "11px", color: "#60a5fa", marginBottom: "6px", fontFamily: "sans-serif" }}>🇧🇪 Belgium Time</div>
-                  <input type="time" value={belgiumTime} onChange={e => setBelgiumTime(e.target.value)} style={{
+                  <input type="time" value={belgiumTime} onChange={e => { setBelgiumTime(e.target.value); setScheduleUserEdited(true); }} style={{
                     width: "100%", background: "rgba(96,165,250,0.08)",
                     border: "1px solid rgba(96,165,250,0.3)", borderRadius: "8px",
                     padding: "8px 10px", color: "#60a5fa", fontSize: "14px",
@@ -779,7 +796,7 @@ export default function App() {
                 </div>
                 <div>
                   <div style={{ fontSize: "11px", color: "#4ade80", marginBottom: "6px", fontFamily: "sans-serif" }}>🇵🇰 Pakistan Time</div>
-                  <input type="time" value={pkTime} onChange={e => setBelgiumTime(pakistanToBelgium(e.target.value))} style={{
+                  <input type="time" value={pkTime} onChange={e => { setBelgiumTime(pakistanToBelgium(e.target.value)); setScheduleUserEdited(true); }} style={{
                     width: "100%", background: "rgba(74,222,128,0.08)",
                     border: "1px solid rgba(74,222,128,0.3)", borderRadius: "8px",
                     padding: "8px 10px", color: "#4ade80", fontSize: "14px",
@@ -802,8 +819,7 @@ export default function App() {
                   📋 Preview
                 </div>
                 {scheduleDays.sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b)).map(day => {
-                  const activeWeekStart2 = editingScheduleWeek || scheduleWeek;
-                  const wr3 = getWeekRange(activeWeekStart2);
+                  const wr3 = getWeekRange(activeWeekForDisplay);
                   const dayIdx = DAYS.indexOf(day);
                   const d = new Date(wr3.start + "T12:00:00");
                   d.setDate(d.getDate() + dayIdx);
@@ -834,7 +850,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Save + Cancel buttons */}
+            {/* Save + Cancel */}
             <div style={{ display: "flex", gap: "8px" }}>
               <button onClick={() => saveSchedule(editingScheduleWeek || scheduleWeek)} disabled={scheduleSaving} style={{
                 flex: 1,
@@ -845,7 +861,11 @@ export default function App() {
               }}>
                 {scheduleSaving ? "✓ Saved!" : editingScheduleWeek ? "💾 Update Schedule" : "💾 Save Schedule"}
               </button>
-              <button onClick={() => { setShowSchedule(false); setEditingScheduleWeek(null); }} style={{
+              <button onClick={() => {
+                setShowSchedule(false);
+                setEditingScheduleWeek(null);
+                setScheduleUserEdited(false);
+              }} style={{
                 background: "rgba(255,255,255,0.06)", color: "#a08040",
                 border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px",
                 padding: "12px 18px", fontSize: "14px", cursor: "pointer", fontFamily: "sans-serif",
@@ -854,6 +874,7 @@ export default function App() {
           </div>
         )}
 
+        {/* Add Class Form */}
         {showForm && (
           <div style={{
             background: "rgba(212,175,55,0.06)", border: "1px solid rgba(212,175,55,0.3)",
@@ -896,6 +917,7 @@ export default function App() {
           </div>
         )}
 
+        {/* Rate */}
         <div style={{
           background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: "12px", padding: "14px 16px", marginBottom: "16px",
@@ -911,6 +933,7 @@ export default function App() {
           {rate && <span style={{ color: "#4ade80", fontSize: "12px", fontFamily: "monospace" }}>${rate}/class</span>}
         </div>
 
+        {/* Month Dropdown */}
         <div style={{ marginBottom: "16px" }}>
           <Label>📅 Select Month</Label>
           <select value={activeMonth} onChange={e => setActiveMonth(e.target.value)} style={{
@@ -929,13 +952,14 @@ export default function App() {
               const unpd = cnt - pd;
               return (
                 <option key={m} value={m} style={{ background: "#1a2940" }}>
-                  {MONTHS_FULL[moo-1]} {y}  -  {cnt} classes  {unpd > 0 ? `| ⚠ ${unpd} unpaid` : cnt > 0 ? "| ✓ All paid" : ""}
+                  {MONTHS_FULL[moo-1]} {y}  —  {cnt} classes  {unpd > 0 ? `| ⚠ ${unpd} unpaid` : cnt > 0 ? "| ✓ All paid" : ""}
                 </option>
               );
             })}
           </select>
         </div>
 
+        {/* Summary */}
         {filtered.length > 0 && (
           <div style={{ marginBottom: "18px" }}>
             <div style={{
@@ -954,7 +978,7 @@ export default function App() {
                 padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px",
               }}>
                 <span style={{ color: "#f87171", fontFamily: "sans-serif", fontSize: "13px", fontWeight: "bold" }}>
-                  ⚠️ {unpaidCount} class{unpaidCount > 1 ? "es" : ""} baaki{unpaidAmount ? ` - $${unpaidAmount} pending` : ""}
+                  ⚠️ {unpaidCount} class{unpaidCount > 1 ? "es" : ""} baaki{unpaidAmount ? ` — $${unpaidAmount} pending` : ""}
                 </span>
                 <button onClick={markAllPaid} style={{
                   background: "linear-gradient(135deg, rgba(74,222,128,0.7), rgba(34,197,94,0.8))",
@@ -1012,7 +1036,7 @@ export default function App() {
                         <span style={{ fontSize: "13px", color: "#e8d5b0", fontFamily: "sans-serif", fontWeight: "bold" }}>{dayName}</span>
                         {s.start && (
                           <span style={{ fontSize: "11px", color: "#60a5fa", fontFamily: "monospace", background: "rgba(96,165,250,0.1)", padding: "2px 7px", borderRadius: "6px" }}>
-                            {formatTime(s.start)}{s.end ? ` - ${formatTime(s.end)}` : ""}
+                            {formatTime(s.start)}{s.end ? ` – ${formatTime(s.end)}` : ""}
                           </span>
                         )}
                         {s.duration && (
@@ -1057,7 +1081,7 @@ export default function App() {
                   {expandedId === s._id && (
                     <div style={{ borderTop: "1px solid rgba(212,175,55,0.2)", background: "rgba(212,175,55,0.04)", padding: "14px 16px", animation: "fadeIn 0.2s ease" }}>
                       <div style={{ fontSize: "11px", color: "#a08040", marginBottom: "8px", fontFamily: "sans-serif", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        📖 Lesson Notes - {dayName}, {dayNum} {monthShort}
+                        📖 Lesson Notes — {dayName}, {dayNum} {monthShort}
                       </div>
                       <textarea
                         value={editingNotes[s._id] ?? s.notes ?? ""}
@@ -1093,6 +1117,17 @@ export default function App() {
           </div>
         )}
 
+        {/* FAB — Add Class */}
+        <button onClick={openForm} style={{
+          position: "fixed", bottom: "24px", right: "24px",
+          width: "56px", height: "56px", borderRadius: "50%",
+          background: "linear-gradient(135deg, #d4af37, #b8960a)",
+          color: "#0f1923", border: "none", fontSize: "24px",
+          cursor: "pointer", boxShadow: "0 4px 20px rgba(212,175,55,0.4)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 20, transition: "transform 0.15s",
+        }} title="Log new class">+</button>
+
         {sessions.length > 0 && (
           <div style={{ marginTop: "24px", textAlign: "center", padding: "12px", color: "#4a5568", fontFamily: "sans-serif", fontSize: "12px" }}>
             Total sessions: <span style={{ color: "#d4af37", fontWeight: "bold" }}>{sessions.length}</span>
@@ -1107,7 +1142,7 @@ export default function App() {
         input[type=time]::-webkit-calendar-picker-indicator { filter: invert(0.7) sepia(1) saturate(2) hue-rotate(5deg); }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 2px; }
-        select option { background: #1a2940; color: "#e8d5b0"; }
+        select option { background: #1a2940; color: #e8d5b0; }
       `}</style>
     </div>
   );
